@@ -45,6 +45,249 @@ class ProcessImageUseCase @Inject constructor(
                     reason = "Unsupported image format or corrupted file"
                 )
             }
+    
+    /**
+     * Reprocess an image with different configuration
+     */
+    suspend fun reprocessImage(
+        imageUri: Uri,
+        newConfig: DetectionConfig
+    ): ProcessingResult = withContext(Dispatchers.IO) {
+        // Clear cache for this image to force reprocessing
+        val cacheKey = generateCacheKey(imageUri)
+        repository.cacheResult(cacheKey, null!!) // Clear specific cache entry
+        
+        // Process with new configuration
+        processImage(imageUri, newConfig)
+    }
+    
+    /**
+     * Process image and save with overlay
+     */
+    suspend fun processAndSaveWithOverlay(
+        imageUri: Uri,
+        outputPath: String,
+        config: DetectionConfig? = null
+    ): OverlayResult = withContext(Dispatchers.IO) {
+        // Process the image
+        val processingResult = processImage(imageUri, config)
+        
+        when (processingResult) {
+            is ProcessingResult.Success -> {
+                // Load original image
+                val bitmapResult = repository.loadImage(imageUri)
+                
+                bitmapResult.fold(
+                    onSuccess = { bitmap ->
+                        // Save image with overlay
+                        val saveResult = repository.saveImageWithOverlay(
+                            bitmap,
+                            processingResult.detectionResult.getValidCards(),
+                            outputPath
+                        )
+                        
+                        saveResult.fold(
+                            onSuccess = { file ->
+                                OverlayResult.Success(
+                                    savedFile = file,
+                                    cardCount = processingResult.detectionResult.validCardsCount
+                                )
+                            },
+                            onFailure = { error ->
+                                OverlayResult.SaveFailed(error)
+                            }
+                        )
+                    },
+                    onFailure = { error ->
+                        OverlayResult.LoadFailed(error)
+                    }
+                )
+            }
+            else -> {
+                OverlayResult.ProcessingFailed(
+                    reason = getProcessingFailureReason(processingResult)
+                )
+            }
+        }
+    }
+    
+    /**
+     * Clear all cached results and history
+     */
+    suspend fun clearAllData() = withContext(Dispatchers.IO) {
+        repository.clearCache()
+        repository.clearHistory()
+        Logger.info("Cleared all cached results and processing history")
+    }
+    
+    /**
+     * Get processing statistics
+     */
+    suspend fun getProcessingStatistics(): ProcessingStatistics = withContext(Dispatchers.IO) {
+        val history = repository.getProcessingHistory()
+        
+        ProcessingStatistics(
+            totalProcessed = history.size,
+            successfulProcessed = history.count { it.isSuccessful },
+            averageProcessingTime = if (history.isNotEmpty()) {
+                history.map { it.processingTimeMs }.average().toLong()
+            } else 0L,
+            averageCardCount = if (history.isNotEmpty()) {
+                history.map { it.cardCount }.average().toInt()
+            } else 0,
+            recentHistory = history.sortedByDescending { it.timestamp }.take(10)
+        )
+    }
+    
+    /**
+     * Generate cache key for an image URI
+     */
+    private fun generateCacheKey(uri: Uri): String {
+        return "cache_${uri.toString().hashCode()}"
+    }
+    
+    /**
+     * Get failure reason from processing result
+     */
+    private fun getProcessingFailureReason(result: ProcessingResult): String {
+        return when (result) {
+            is ProcessingResult.InvalidImage -> result.reason
+            is ProcessingResult.LoadError -> "Failed to load image: ${result.error.message}"
+            is ProcessingResult.DetectionFailed -> result.reason
+            is ProcessingResult.ConfigurationError -> "Configuration error: ${result.error.message}"
+            is ProcessingResult.UnexpectedError -> "Unexpected error: ${result.error.message}"
+            else -> "Unknown error"
+        }
+    }
+}
+
+/**
+ * Sealed class representing different processing results
+ */
+sealed class ProcessingResult {
+    abstract val uri: Uri
+    
+    data class Success(
+        override val uri: Uri,
+        val detectionResult: DetectionResult,
+        val fromCache: Boolean,
+        val metadata: com.memoryassist.fanfanlokmapper.domain.repository.ImageMetadata?
+    ) : ProcessingResult()
+    
+    data class InvalidImage(
+        override val uri: Uri,
+        val reason: String
+    ) : ProcessingResult()
+    
+    data class LoadError(
+        override val uri: Uri,
+        val error: Throwable
+    ) : ProcessingResult()
+    
+    data class DetectionFailed(
+        override val uri: Uri,
+        val detectionResult: DetectionResult,
+        val reason: String
+    ) : ProcessingResult()
+    
+    data class ConfigurationError(
+        override val uri: Uri,
+        val error: Throwable
+    ) : ProcessingResult()
+    
+    data class UnexpectedError(
+        override val uri: Uri,
+        val error: Throwable
+    ) : ProcessingResult()
+}
+
+/**
+ * Batch processing update events
+ */
+sealed class BatchProcessingUpdate {
+    data class Progress(
+        val currentIndex: Int,
+        val totalCount: Int,
+        val currentUri: Uri,
+        val completedResults: List<ProcessingResult>
+    ) : BatchProcessingUpdate() {
+        val progressPercentage: Float get() = (currentIndex.toFloat() / totalCount) * 100
+    }
+    
+    data class ItemComplete(
+        val index: Int,
+        val uri: Uri,
+        val result: ProcessingResult
+    ) : BatchProcessingUpdate()
+    
+    data class Complete(
+        val totalProcessed: Int,
+        val results: List<ProcessingResult>,
+        val successCount: Int,
+        val failureCount: Int
+    ) : BatchProcessingUpdate() {
+        val successRate: Float get() = if (totalProcessed > 0) {
+            (successCount.toFloat() / totalProcessed) * 100
+        } else 0f
+    }
+}
+
+/**
+ * Export operation results
+ */
+sealed class ExportResult {
+    data class Success(
+        val exportedFile: java.io.File,
+        val cardCount: Int
+    ) : ExportResult()
+    
+    data class ExportFailed(
+        val error: Throwable
+    ) : ExportResult()
+    
+    data class ProcessingFailed(
+        val reason: String
+    ) : ExportResult()
+}
+
+/**
+ * Overlay save operation results
+ */
+sealed class OverlayResult {
+    data class Success(
+        val savedFile: java.io.File,
+        val cardCount: Int
+    ) : OverlayResult()
+    
+    data class LoadFailed(
+        val error: Throwable
+    ) : OverlayResult()
+    
+    data class SaveFailed(
+        val error: Throwable
+    ) : OverlayResult()
+    
+    data class ProcessingFailed(
+        val reason: String
+    ) : OverlayResult()
+}
+
+/**
+ * Processing statistics
+ */
+data class ProcessingStatistics(
+    val totalProcessed: Int,
+    val successfulProcessed: Int,
+    val averageProcessingTime: Long,
+    val averageCardCount: Int,
+    val recentHistory: List<com.memoryassist.fanfanlokmapper.domain.repository.ProcessingHistoryEntry>
+) {
+    val successRate: Float get() = if (totalProcessed > 0) {
+        (successfulProcessed.toFloat() / totalProcessed) * 100
+    } else 0f
+    
+    val failureCount: Int get() = totalProcessed - successfulProcessed
+}
             
             // Step 2: Get image metadata
             val metadataResult = repository.getImageMetadata(imageUri)
@@ -221,4 +464,3 @@ class ProcessImageUseCase @Inject constructor(
             }
         }
     }
-}
