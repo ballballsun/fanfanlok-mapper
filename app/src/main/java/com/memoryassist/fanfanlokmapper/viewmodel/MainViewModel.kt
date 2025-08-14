@@ -3,11 +3,16 @@ package com.memoryassist.fanfanlokmapper.viewmodel
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.memoryassist.fanfanlokmapper.data.export.ExportFormat
+import com.memoryassist.fanfanlokmapper.data.models.AppSettings
+import com.memoryassist.fanfanlokmapper.data.models.AppTheme
 import com.memoryassist.fanfanlokmapper.data.models.DetectionResult
+import com.memoryassist.fanfanlokmapper.data.models.ExportFormat
+import com.memoryassist.fanfanlokmapper.data.models.ExportSettings
+import com.memoryassist.fanfanlokmapper.data.models.OverlayColor
+import com.memoryassist.fanfanlokmapper.data.models.OverlaySettings
+import com.memoryassist.fanfanlokmapper.data.models.ProcessingHistoryEntry
 import com.memoryassist.fanfanlokmapper.data.repository.ImageRepository
-import com.memoryassist.fanfanlokmapper.data.repository.StorageStatistics
-import com.memoryassist.fanfanlokmapper.domain.repository.ProcessingHistoryEntry
+import com.memoryassist.fanfanlokmapper.domain.repository.StorageStatistics
 import com.memoryassist.fanfanlokmapper.domain.usecase.ProcessImageUseCase
 import com.memoryassist.fanfanlokmapper.domain.usecase.ProcessingStatistics
 import com.memoryassist.fanfanlokmapper.utils.Logger
@@ -372,69 +377,7 @@ sealed class NavigationState {
     object About : NavigationState()
 }
 
-/**
- * App settings
- */
-data class AppSettings(
-    val theme: AppTheme = AppTheme.SYSTEM,
-    val autoProcessOnSelect: Boolean = false,
-    val saveProcessingHistory: Boolean = true,
-    val enableDebugLogging: Boolean = true,
-    val maxHistoryEntries: Int = 100,
-    val autoCleanupDays: Int = 7,
-    val defaultExportFormat: ExportFormat = ExportFormat.AUTOMATION,
-    val showTutorialOnStart: Boolean = true,
-    val enableHapticFeedback: Boolean = true,
-    val enableSoundEffects: Boolean = false
-)
 
-/**
- * Overlay display settings
- */
-data class OverlaySettings(
-    val showConfidence: Boolean = true,
-    val showGridPosition: Boolean = false,
-    val showGridLines: Boolean = false,
-    val overlayOpacity: Float = 1.0f,
-    val overlayColor: OverlayColor = OverlayColor.GREEN,
-    val strokeWidth: Float = 3f,
-    val showCrosshair: Boolean = true,
-    val enableAnimations: Boolean = true
-)
-
-/**
- * Export settings
- */
-data class ExportSettings(
-    val defaultFormat: ExportFormat = ExportFormat.AUTOMATION,
-    val includeMetadata: Boolean = true,
-    val prettyPrint: Boolean = true,
-    val useRoundedCoordinates: Boolean = true,
-    val exportPath: String? = null,
-    val autoExportAfterProcessing: Boolean = false,
-    val exportAllFormats: Boolean = false
-)
-
-/**
- * App themes
- */
-enum class AppTheme {
-    LIGHT,
-    DARK,
-    SYSTEM
-}
-
-/**
- * Overlay colors
- */
-enum class OverlayColor {
-    GREEN,
-    BLUE,
-    RED,
-    YELLOW,
-    PURPLE,
-    CYAN
-}
 
 /**
  * Toast message

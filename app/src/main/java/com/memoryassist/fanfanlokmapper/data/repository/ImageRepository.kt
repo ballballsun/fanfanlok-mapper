@@ -37,7 +37,7 @@ class ImageRepository @Inject constructor(
     private val resultCache = ConcurrentHashMap<String, DetectionResult>()
     
     // Processing history stored in memory (could be persisted to database)
-    private val processingHistory = mutableListOf<ProcessingHistoryEntry>()
+    private val processingHistory = mutableListOf<com.memoryassist.fanfanlokmapper.data.models.ProcessingHistoryEntry>()
     
     // Current detection configuration
     private var currentConfig = DetectionConfig.default()
@@ -332,11 +332,11 @@ class ImageRepository @Inject constructor(
     
     // History Operations
     
-    override suspend fun getProcessingHistory(): List<ProcessingHistoryEntry> {
+    override suspend fun getProcessingHistory(): List<com.memoryassist.fanfanlokmapper.data.models.ProcessingHistoryEntry> {
         return processingHistory.toList()
     }
     
-    override suspend fun addToHistory(entry: ProcessingHistoryEntry) {
+    override suspend fun addToHistory(entry: com.memoryassist.fanfanlokmapper.data.models.ProcessingHistoryEntry) {
         processingHistory.add(0, entry) // Add to beginning for recent first
         
         // Keep only last 100 entries
@@ -452,9 +452,162 @@ class ImageRepository @Inject constructor(
     
     // Private helper methods
     
+    private fun loadHistoryFromDisk() {
+        try {
+            val historyFile = File(historyDir, "history.json")
+            if (historyFile.exists()) {
+                val jsonContent = historyFile.readText()
+                val loadedHistory = json.decodeFromString<List<ProcessingHistoryEntry>>(jsonContent)
+                processingHistory.clear()
+                processingHistory.addAll(loadedHistory)
+                Logger.info("Loaded ${processingHistory.size} history entries")
+            }
+        } catch (e: Exception) {
+            Logger.error("Failed to load history from disk", e)
+        }
+    }
+    
     private fun saveHistoryToDisk() {
         try {
             val historyFile = File(historyDir, "history.json")
             val jsonContent = json.encodeToString(processingHistory)
             historyFile.writeText(jsonContent)
+        } catch (e: Exception) {
+            Logger.error("Failed to save history", e)
         }
+    }
+    
+    private fun saveConfigToDisk() {
+        try {
+            val configFile = File(context.filesDir, "detection_config.json")
+            val jsonContent = json.encodeToString(currentConfig)
+            configFile.writeText(jsonContent)
+        } catch (e: Exception) {
+            Logger.error("Failed to save config", e)
+        }
+    }
+    
+    // Storage Management Operations
+    
+    override suspend fun getStorageStatistics(): com.memoryassist.fanfanlokmapper.domain.repository.StorageStatistics {
+        return withContext(Dispatchers.IO) {
+            val cacheSize = cacheDir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+            val historySize = File(historyDir, "history.json").let { if (it.exists()) it.length() else 0L }
+            val totalSize = cacheSize + historySize
+            val fileCount = cacheDir.listFiles()?.size ?: 0
+            val oldestEntry = processingHistory.minByOrNull { it.timestamp }?.timestamp
+            
+            com.memoryassist.fanfanlokmapper.domain.repository.StorageStatistics(
+                cacheSize = cacheSize,
+                historySize = historySize,
+                totalSize = totalSize,
+                fileCount = fileCount,
+                oldestEntry = oldestEntry
+            )
+        }
+    }
+    
+    override suspend fun cleanupOldCache() {
+        withContext(Dispatchers.IO) {
+            try {
+                val cutoffTime = System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L) // 7 days
+                
+                // Clean old cache files
+                cacheDir.listFiles()?.forEach { file ->
+                    if (file.lastModified() < cutoffTime) {
+                        file.delete()
+                    }
+                }
+                
+                // Clean old history entries
+                processingHistory.removeAll { it.timestamp < cutoffTime }
+                saveHistoryToDisk()
+                
+                Logger.info("Old cache cleaned up")
+            } catch (e: Exception) {
+                Logger.error("Failed to cleanup old cache", e)
+            }
+        }
+    }
+    
+    override suspend fun exportAllFormats(result: DetectionResult): Map<com.memoryassist.fanfanlokmapper.data.models.ExportFormat, Result<File>> {
+        return withContext(Dispatchers.IO) {
+            val exports = mutableMapOf<com.memoryassist.fanfanlokmapper.data.models.ExportFormat, Result<File>>()
+            val timestamp = System.currentTimeMillis()
+            
+            // JSON Export
+            try {
+                val jsonFile = File(context.getExternalFilesDir(null), "export_$timestamp.json")
+                val exportData = result.toExportFormat()
+                val jsonContent = json.encodeToString(exportData)
+                jsonFile.writeText(jsonContent)
+                exports[com.memoryassist.fanfanlokmapper.data.models.ExportFormat.JSON] = Result.success(jsonFile)
+            } catch (e: Exception) {
+                exports[com.memoryassist.fanfanlokmapper.data.models.ExportFormat.JSON] = Result.failure(e)
+            }
+            
+            // CSV Export
+            try {
+                val csvFile = File(context.getExternalFilesDir(null), "export_$timestamp.csv")
+                val csvContent = buildString {
+                    appendLine("id,centerX,centerY,gridRow,gridColumn,confidence")
+                    result.getValidCards().forEach { card ->
+                        appendLine("${card.id},${card.centerX},${card.centerY},${card.gridRow},${card.gridColumn},${card.confidence}")
+                    }
+                }
+                csvFile.writeText(csvContent)
+                exports[com.memoryassist.fanfanlokmapper.data.models.ExportFormat.CSV] = Result.success(csvFile)
+            } catch (e: Exception) {
+                exports[com.memoryassist.fanfanlokmapper.data.models.ExportFormat.CSV] = Result.failure(e)
+            }
+            
+            exports
+        }
+    }
+    
+    override suspend fun importDetectionResult(file: File): Result<DetectionResult> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val jsonContent = file.readText()
+                val exportData = json.decodeFromString<com.memoryassist.fanfanlokmapper.data.models.ExportData>(jsonContent)
+                
+                // Convert ExportData back to DetectionResult
+                val cardPositions = exportData.cardPositions.map { coord ->
+                    com.memoryassist.fanfanlokmapper.data.models.CardPosition(
+                        id = coord.id,
+                        centerX = coord.centerX.toFloat(),
+                        centerY = coord.centerY.toFloat()
+                    )
+                }
+                
+                val detectionResult = DetectionResult.success(
+                    cards = cardPositions,
+                    processingTime = exportData.metadata.processingTimeMs,
+                    imageWidth = exportData.metadata.imageWidth,
+                    imageHeight = exportData.metadata.imageHeight
+                )
+                
+                Result.success(detectionResult)
+            } catch (e: Exception) {
+                Logger.error("Failed to import detection result", e)
+                Result.failure(e)
+            }
+        }
+    }
+    
+}
+
+/**
+ * Storage statistics for the app
+ */
+data class StorageStatistics(
+    val totalSize: Long,
+    val cacheSize: Long,
+    val historySize: Long,
+    val exportSize: Long,
+    val formattedTotalSize: String,
+    val formattedCacheSize: String,
+    val formattedHistorySize: String,
+    val formattedExportSize: String,
+    val lastUpdated: Long = System.currentTimeMillis()
+)

@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.net.Uri
 import com.memoryassist.fanfanlokmapper.data.models.CardPosition
 import com.memoryassist.fanfanlokmapper.data.models.DetectionResult
+import com.memoryassist.fanfanlokmapper.data.models.ExportFormat
+import com.memoryassist.fanfanlokmapper.utils.Constants
 import kotlinx.coroutines.flow.Flow
 import java.io.File
 
@@ -115,13 +117,13 @@ interface ImageRepositoryInterface {
      * Get list of previously processed images
      * @return List of processing history entries
      */
-    suspend fun getProcessingHistory(): List<ProcessingHistoryEntry>
+    suspend fun getProcessingHistory(): List<com.memoryassist.fanfanlokmapper.data.models.ProcessingHistoryEntry>
     
     /**
      * Add entry to processing history
      * @param entry The history entry to add
      */
-    suspend fun addToHistory(entry: ProcessingHistoryEntry)
+    suspend fun addToHistory(entry: com.memoryassist.fanfanlokmapper.data.models.ProcessingHistoryEntry)
     
     /**
      * Clear processing history
@@ -162,6 +164,33 @@ interface ImageRepositoryInterface {
      * Reset detection parameters to defaults
      */
     suspend fun resetDetectionConfig()
+    
+    // Storage Management Operations
+    
+    /**
+     * Get storage statistics for cache and files
+     * @return Storage statistics information
+     */
+    suspend fun getStorageStatistics(): StorageStatistics
+    
+    /**
+     * Clean up old cached files and data
+     */
+    suspend fun cleanupOldCache()
+    
+    /**
+     * Export detection results to multiple formats
+     * @param result The detection result to export
+     * @return Map of format to export result
+     */
+    suspend fun exportAllFormats(result: DetectionResult): Map<ExportFormat, Result<File>>
+    
+    /**
+     * Import detection result from file
+     * @param file The file to import from
+     * @return Result containing the imported detection result
+     */
+    suspend fun importDetectionResult(file: File): Result<DetectionResult>
 }
 
 /**
@@ -286,5 +315,27 @@ data class DetectionConfig(
          * Create a default balanced configuration
          */
         fun default(): DetectionConfig = DetectionConfig()
+    }
+}
+
+/**
+ * Storage statistics for cache and file management
+ */
+data class StorageStatistics(
+    val cacheSize: Long,
+    val historySize: Long,
+    val totalSize: Long,
+    val fileCount: Int,
+    val oldestEntry: Long? = null
+) {
+    val formattedCacheSize: String get() = formatBytes(cacheSize)
+    val formattedHistorySize: String get() = formatBytes(historySize)
+    val formattedTotalSize: String get() = formatBytes(totalSize)
+    
+    private fun formatBytes(bytes: Long): String = when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        bytes < 1024 * 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
+        else -> "${bytes / (1024 * 1024 * 1024)} GB"
     }
 }

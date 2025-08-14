@@ -207,7 +207,7 @@ class BorderDetector {
         // Reduce confidence for rotated rectangles
         val angle = abs(rect.angle)
         if (angle > 5) {
-            confidence *= (1.0f - angle / 90.0f)
+            confidence *= (1.0f - angle.toFloat() / 90.0f)
         }
         
         // Reduce confidence for extreme aspect ratios

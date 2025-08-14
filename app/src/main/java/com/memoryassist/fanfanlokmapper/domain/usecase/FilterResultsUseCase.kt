@@ -177,23 +177,23 @@ class FilterResultsUseCase {
         val medianHeight = heights.sorted()[heights.size / 2]
         
         // Calculate MAD (Median Absolute Deviation)
-        val widthDeviations = widths.map { abs(it - medianWidth) }
-        val heightDeviations = heights.map { abs(it - medianHeight) }
+        val widthDeviations = widths.map { kotlin.math.abs(it - medianWidth) }
+        val heightDeviations = heights.map { kotlin.math.abs(it - medianHeight) }
         
         val madWidth = widthDeviations.sorted()[widthDeviations.size / 2]
         val madHeight = heightDeviations.sorted()[heightDeviations.size / 2]
         
         // Filter outliers (more than 3 MADs from median)
-        val threshold = 3.0
+        val threshold = 3.0f
         
         return cards.filter { card ->
             val widthZScore = if (madWidth > 0) {
-                abs(card.width - medianWidth) / madWidth
-            } else 0.0
+                kotlin.math.abs(card.width - medianWidth) / madWidth
+            } else 0.0f
             
             val heightZScore = if (madHeight > 0) {
-                abs(card.height - medianHeight) / madHeight
-            } else 0.0
+                kotlin.math.abs(card.height - medianHeight) / madHeight
+            } else 0.0f
             
             val isOutlier = widthZScore > threshold || heightZScore > threshold
             

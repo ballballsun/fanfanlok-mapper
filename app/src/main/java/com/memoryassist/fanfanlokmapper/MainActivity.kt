@@ -7,10 +7,26 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -25,7 +41,7 @@ import com.memoryassist.fanfanlokmapper.ui.theme.FanFanLokMapperTheme
 import com.memoryassist.fanfanlokmapper.utils.Logger
 import com.memoryassist.fanfanlokmapper.viewmodel.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
-import org.opencv.android.OpenCVLoader
+// import org.opencv.android.OpenCVLoader // TODO: Add OpenCV Android module
 
 /**
  * Main activity of the FanFanLok Mapper application
@@ -37,11 +53,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         // Initialize OpenCV
-        if (!OpenCVLoader.initDebug()) {
-            Logger.error("Unable to load OpenCV!")
-        } else {
-            Logger.info("OpenCV loaded successfully")
-        }
+        // TODO: Add OpenCV initialization when module is added
+        // if (!OpenCVLoader.initDebug()) {
+        //     Logger.error("Unable to load OpenCV!")
+        // } else {
+        //     Logger.info("OpenCV loaded successfully")
+        // }
         
         enableEdgeToEdge()
         
@@ -175,6 +192,7 @@ sealed class Screen(val route: String) {
 /**
  * Export screen composable (placeholder)
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExportScreen(
     resultId: String?,
@@ -183,14 +201,14 @@ fun ExportScreen(
 ) {
     // This would be implemented with export UI
     // For now, it's a placeholder
-    androidx.compose.material3.Scaffold(
+    Scaffold(
         topBar = {
-            androidx.compose.material3.TopAppBar(
-                title = { androidx.compose.material3.Text("Export Results") },
+            TopAppBar(
+                title = { Text("Export Results") },
                 navigationIcon = {
-                    androidx.compose.material3.IconButton(onClick = onNavigateBack) {
-                        androidx.compose.material3.Icon(
-                            imageVector = androidx.compose.material.icons.Icons.Default.ArrowBack,
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
                             contentDescription = "Back"
                         )
                     }
@@ -198,35 +216,35 @@ fun ExportScreen(
             )
         }
     ) { paddingValues ->
-        androidx.compose.foundation.layout.Box(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .androidx.compose.foundation.layout.padding(paddingValues),
-            contentAlignment = androidx.compose.ui.Alignment.Center
+                .padding(paddingValues),
+            contentAlignment = Alignment.Center
         ) {
-            androidx.compose.foundation.layout.Column(
-                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                androidx.compose.material3.Text(
+                Text(
                     text = "Export Options",
-                    style = androidx.compose.material3.MaterialTheme.typography.headlineMedium
+                    style = MaterialTheme.typography.headlineMedium
                 )
                 
-                androidx.compose.material3.Button(
+                Button(
                     onClick = { 
                         onExportComplete("/storage/emulated/0/exports/result.json")
                     }
                 ) {
-                    androidx.compose.material3.Text("Export as JSON")
+                    Text("Export as JSON")
                 }
                 
-                androidx.compose.material3.OutlinedButton(
+                OutlinedButton(
                     onClick = { 
                         onExportComplete("/storage/emulated/0/exports/result_all.zip")
                     }
                 ) {
-                    androidx.compose.material3.Text("Export All Formats")
+                    Text("Export All Formats")
                 }
             }
         }

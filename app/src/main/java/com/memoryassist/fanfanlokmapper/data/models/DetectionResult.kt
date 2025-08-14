@@ -149,27 +149,3 @@ data class DetectionMetadata(
     val gridAnalysisScore: Float = 0f
 )
 
-/**
- * Export format for external programs
- */
-@Serializable
-data class ExportData(
-    val cardPositions: List<SimpleCoordinate>,
-    val metadata: ExportMetadata
-)
-
-/**
- * Metadata for exported data
- */
-@Serializable
-data class ExportMetadata(
-    val totalCards: Int,
-    val gridRows: Int,
-    val gridColumns: Int,
-    val imageWidth: Int,
-    val imageHeight: Int,
-    val processingTimeMs: Long,
-    val averageConfidence: Float,
-    val timestamp: Long,
-    val version: String = "1.0"
-)

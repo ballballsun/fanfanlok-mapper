@@ -3,14 +3,15 @@ package com.memoryassist.fanfanlokmapper.domain.usecase
 import android.net.Uri
 import com.memoryassist.fanfanlokmapper.data.models.DetectionResult
 import com.memoryassist.fanfanlokmapper.domain.repository.ImageRepositoryInterface
-import com.memoryassist.fanfanlokmapper.domain.repository.DetectionConfig
-import com.memoryassist.fanfanlokmapper.domain.repository.ProcessingHistoryEntry
+import com.memoryassist.fanfanlokmapper.data.models.ProcessingHistoryEntry
+import com.memoryassist.fanfanlokmapper.domain.repository.ImageMetadata
 import com.memoryassist.fanfanlokmapper.utils.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -45,6 +46,64 @@ class ProcessImageUseCase @Inject constructor(
                     reason = "Unsupported image format or corrupted file"
                 )
             }
+            
+            // Step 2: Check cache first
+            val cacheKey = generateCacheKey(imageUri)
+            val cachedResult = repository.getCachedResult(cacheKey)
+            if (cachedResult != null) {
+                Logger.info("Returning cached result for URI: $imageUri")
+                return@withContext ProcessingResult.Success(
+                    uri = imageUri,
+                    detectionResult = cachedResult,
+                    fromCache = true,
+                    metadata = null
+                )
+            }
+            
+            // Step 3: Load and process image
+            val loadResult = repository.loadImage(imageUri)
+            val bitmap = loadResult.getOrElse { error ->
+                return@withContext ProcessingResult.LoadError(
+                    uri = imageUri,
+                    error = error
+                )
+            }
+            
+            // Step 4: Process image for card detection
+            val detectionResult = repository.processImage(bitmap)
+            
+            // Step 5: Cache the result
+            repository.cacheResult(cacheKey, detectionResult)
+            
+            // Step 6: Add to history
+            val historyEntry = ProcessingHistoryEntry(
+                id = sessionId,
+                fileName = imageUri.lastPathSegment ?: "unknown",
+                uri = imageUri.toString(),
+                timestamp = System.currentTimeMillis(),
+                detectedCards = detectionResult.validCardsCount,
+                processingTimeMs = System.currentTimeMillis() - startTime,
+                isSuccessful = detectionResult.isSuccessful
+            )
+            repository.addToHistory(historyEntry)
+            
+            Logger.info("Successfully processed image: ${detectionResult.validCardsCount} cards detected")
+            
+            ProcessingResult.Success(
+                uri = imageUri,
+                detectionResult = detectionResult,
+                fromCache = false,
+                metadata = repository.getImageMetadata(imageUri).getOrNull()
+            )
+            
+        } catch (e: Exception) {
+            Logger.error("Unexpected error during image processing", e)
+            ProcessingResult.UnexpectedError(
+                uri = imageUri,
+                error = e
+            )
+        }
+    }
     
     /**
      * Reprocess an image with different configuration
@@ -112,6 +171,74 @@ class ProcessImageUseCase @Inject constructor(
     }
     
     /**
+     * Process multiple images in batch with progress updates
+     */
+    fun processImages(
+        imageUris: List<Uri>,
+        config: DetectionConfig? = null
+    ): kotlinx.coroutines.flow.Flow<BatchProcessingUpdate> = kotlinx.coroutines.flow.flow {
+        val results = mutableListOf<ProcessingResult>()
+        
+        imageUris.forEachIndexed { index, uri ->
+            emit(BatchProcessingUpdate.Progress(
+                currentIndex = index + 1,
+                totalCount = imageUris.size,
+                progressPercentage = ((index + 1) * 100) / imageUris.size,
+                completedResults = results.toList()
+            ))
+            
+            val result = processImage(uri, config)
+            results.add(result)
+            
+            emit(BatchProcessingUpdate.ItemCompleted(
+                index = index,
+                result = result,
+                completedResults = results.toList()
+            ))
+        }
+        
+        emit(BatchProcessingUpdate.BatchCompleted(results.toList()))
+    }
+    
+    /**
+     * Process image and export results to file
+     */
+    suspend fun processAndExport(
+        imageUri: Uri,
+        exportPath: String,
+        config: DetectionConfig? = null
+    ): ExportResult = withContext(Dispatchers.IO) {
+        val processingResult = processImage(imageUri, config)
+        
+        when (processingResult) {
+            is ProcessingResult.Success -> {
+                try {
+                    val exportData = processingResult.detectionResult.toExportFormat()
+                    val jsonString = kotlinx.serialization.json.Json.encodeToString(
+                        com.memoryassist.fanfanlokmapper.data.models.ExportData.serializer(),
+                        exportData
+                    )
+                    
+                    File(exportPath).writeText(jsonString)
+                    
+                    ExportResult.Success(
+                        filePath = exportPath,
+                        cardCount = processingResult.detectionResult.validCardsCount
+                    )
+                } catch (e: Exception) {
+                    Logger.error("Failed to export results", e)
+                    ExportResult.Error(e.message ?: "Export failed")
+                }
+            }
+            is ProcessingResult.InvalidImage -> ExportResult.Error("Invalid image: ${processingResult.reason}")
+            is ProcessingResult.LoadError -> ExportResult.Error("Load error: ${processingResult.error.message}")
+            is ProcessingResult.DetectionFailed -> ExportResult.Error("Detection failed: ${processingResult.reason}")
+            is ProcessingResult.ConfigurationError -> ExportResult.Error("Configuration error: ${processingResult.error.message}")
+            is ProcessingResult.UnexpectedError -> ExportResult.Error("Unexpected error: ${processingResult.error.message}")
+        }
+    }
+    
+    /**
      * Clear all cached results and history
      */
     suspend fun clearAllData() = withContext(Dispatchers.IO) {
@@ -133,7 +260,7 @@ class ProcessImageUseCase @Inject constructor(
                 history.map { it.processingTimeMs }.average().toLong()
             } else 0L,
             averageCardCount = if (history.isNotEmpty()) {
-                history.map { it.cardCount }.average().toInt()
+                history.map { it.detectedCards }.average().toInt()
             } else 0,
             recentHistory = history.sortedByDescending { it.timestamp }.take(10)
         )
@@ -202,51 +329,76 @@ sealed class ProcessingResult {
 }
 
 /**
- * Batch processing update events
+ * Sealed class for batch processing updates
  */
 sealed class BatchProcessingUpdate {
     data class Progress(
         val currentIndex: Int,
         val totalCount: Int,
-        val currentUri: Uri,
+        val progressPercentage: Int,
         val completedResults: List<ProcessingResult>
-    ) : BatchProcessingUpdate() {
-        val progressPercentage: Float get() = (currentIndex.toFloat() / totalCount) * 100
-    }
-    
-    data class ItemComplete(
-        val index: Int,
-        val uri: Uri,
-        val result: ProcessingResult
     ) : BatchProcessingUpdate()
     
-    data class Complete(
-        val totalProcessed: Int,
-        val results: List<ProcessingResult>,
-        val successCount: Int,
-        val failureCount: Int
-    ) : BatchProcessingUpdate() {
-        val successRate: Float get() = if (totalProcessed > 0) {
-            (successCount.toFloat() / totalProcessed) * 100
-        } else 0f
+    data class ItemCompleted(
+        val index: Int,
+        val result: ProcessingResult,
+        val completedResults: List<ProcessingResult>
+    ) : BatchProcessingUpdate()
+    
+    data class BatchCompleted(
+        val allResults: List<ProcessingResult>
+    ) : BatchProcessingUpdate()
+}
+
+/**
+ * Batch processing progress data
+ */
+data class BatchProgress(
+    val current: Int,
+    val total: Int,
+    val completed: Int
+)
+
+/**
+ * Processing statistics data
+ */
+data class ProcessingStatistics(
+    val totalProcessed: Int,
+    val successfulProcessed: Int,
+    val averageProcessingTime: Long,
+    val averageCardCount: Int,
+    val recentHistory: List<ProcessingHistoryEntry>
+) {
+    val successRate: Float get() = if (totalProcessed > 0) {
+        (successfulProcessed.toFloat() / totalProcessed) * 100
+    } else 0f
+}
+
+/**
+ * Detection configuration
+ */
+data class DetectionConfig(
+    val sensitivity: Float = 0.5f,
+    val minCardSize: Int = 30,
+    val maxCardSize: Int = 200,
+    val useAdvancedFiltering: Boolean = true
+) {
+    companion object {
+        fun default() = DetectionConfig()
     }
 }
 
 /**
- * Export operation results
+ * Export result sealed class
  */
 sealed class ExportResult {
     data class Success(
-        val exportedFile: java.io.File,
+        val filePath: String,
         val cardCount: Int
     ) : ExportResult()
     
-    data class ExportFailed(
-        val error: Throwable
-    ) : ExportResult()
-    
-    data class ProcessingFailed(
-        val reason: String
+    data class Error(
+        val message: String
     ) : ExportResult()
 }
 
@@ -271,196 +423,3 @@ sealed class OverlayResult {
         val reason: String
     ) : OverlayResult()
 }
-
-/**
- * Processing statistics
- */
-data class ProcessingStatistics(
-    val totalProcessed: Int,
-    val successfulProcessed: Int,
-    val averageProcessingTime: Long,
-    val averageCardCount: Int,
-    val recentHistory: List<com.memoryassist.fanfanlokmapper.domain.repository.ProcessingHistoryEntry>
-) {
-    val successRate: Float get() = if (totalProcessed > 0) {
-        (successfulProcessed.toFloat() / totalProcessed) * 100
-    } else 0f
-    
-    val failureCount: Int get() = totalProcessed - successfulProcessed
-}
-            
-            // Step 2: Get image metadata
-            val metadataResult = repository.getImageMetadata(imageUri)
-            val metadata = metadataResult.getOrNull()
-            
-            if (metadata != null) {
-                Logger.info("Image metadata: ${metadata.width}x${metadata.height}, ${metadata.formattedSize}")
-            }
-            
-            // Step 3: Check cache for previous results
-            val cacheKey = generateCacheKey(imageUri)
-            val cachedResult = repository.getCachedResult(cacheKey)
-            
-            if (cachedResult != null) {
-                Logger.info("Found cached result for image")
-                return@withContext ProcessingResult.Success(
-                    uri = imageUri,
-                    detectionResult = cachedResult,
-                    fromCache = true,
-                    metadata = metadata
-                )
-            }
-            
-            // Step 4: Load image
-            val loadResult = repository.loadImage(imageUri)
-            val bitmap = loadResult.getOrElse { error ->
-                Logger.error("Failed to load image", error)
-                return@withContext ProcessingResult.LoadError(
-                    uri = imageUri,
-                    error = error
-                )
-            }
-            
-            // Step 5: Get or use provided configuration
-            val detectionConfig = config ?: repository.getDetectionConfig()
-            
-            // Step 6: Validate configuration
-            val configValidation = detectCardsUseCase.validateConfig(detectionConfig)
-            if (configValidation.isFailure) {
-                return@withContext ProcessingResult.ConfigurationError(
-                    uri = imageUri,
-                    error = configValidation.exceptionOrNull() ?: Exception("Invalid configuration")
-                )
-            }
-            
-            // Step 7: Execute card detection
-            val detectionResult = detectCardsUseCase.execute(bitmap, detectionConfig)
-            
-            // Step 8: Check if detection was successful
-            if (!detectionResult.isSuccessful) {
-                return@withContext ProcessingResult.DetectionFailed(
-                    uri = imageUri,
-                    detectionResult = detectionResult,
-                    reason = detectionResult.errorMessage ?: "Unknown detection error"
-                )
-            }
-            
-            // Step 9: Cache the result
-            repository.cacheResult(cacheKey, detectionResult)
-            
-            // Step 10: Save to history
-            val processingTime = System.currentTimeMillis() - startTime
-            val historyEntry = ProcessingHistoryEntry(
-                id = sessionId,
-                timestamp = System.currentTimeMillis(),
-                imagePath = imageUri.toString(),
-                cardCount = detectionResult.validCardsCount,
-                processingTimeMs = processingTime,
-                isSuccessful = true
-            )
-            repository.addToHistory(historyEntry)
-            
-            Logger.success("Image processing completed: ${detectionResult.validCardsCount} cards detected in ${processingTime}ms")
-            
-            ProcessingResult.Success(
-                uri = imageUri,
-                detectionResult = detectionResult,
-                fromCache = false,
-                metadata = metadata
-            )
-            
-        } catch (e: Exception) {
-            Logger.error("Unexpected error during image processing", e)
-            ProcessingResult.UnexpectedError(
-                uri = imageUri,
-                error = e
-            )
-        }
-    }
-    
-    /**
-     * Process multiple images with progress updates
-     */
-    fun processImages(
-        imageUris: List<Uri>,
-        config: DetectionConfig? = null
-    ): Flow<BatchProcessingUpdate> = flow {
-        val totalCount = imageUris.size
-        val results = mutableListOf<ProcessingResult>()
-        
-        imageUris.forEachIndexed { index, uri ->
-            // Emit progress update
-            emit(BatchProcessingUpdate.Progress(
-                currentIndex = index,
-                totalCount = totalCount,
-                currentUri = uri,
-                completedResults = results.toList()
-            ))
-            
-            // Process image
-            val result = processImage(uri, config)
-            results.add(result)
-            
-            // Emit individual result
-            emit(BatchProcessingUpdate.ItemComplete(
-                index = index,
-                uri = uri,
-                result = result
-            ))
-        }
-        
-        // Emit completion
-        emit(BatchProcessingUpdate.Complete(
-            totalProcessed = totalCount,
-            results = results,
-            successCount = results.count { it is ProcessingResult.Success },
-            failureCount = results.count { it !is ProcessingResult.Success }
-        ))
-    }.flowOn(Dispatchers.IO)
-    
-    /**
-     * Process and export results directly
-     */
-    suspend fun processAndExport(
-        imageUri: Uri,
-        exportPath: String,
-        config: DetectionConfig? = null
-    ): ExportResult = withContext(Dispatchers.IO) {
-        // Process the image
-        val processingResult = processImage(imageUri, config)
-        
-        when (processingResult) {
-            is ProcessingResult.Success -> {
-                // Export to JSON
-                val exportResult = repository.exportToJson(
-                    processingResult.detectionResult,
-                    exportPath
-                )
-                
-                exportResult.fold(
-                    onSuccess = { file ->
-                        Logger.logExport(file.name, processingResult.detectionResult.validCardsCount)
-                        ExportResult.Success(
-                            exportedFile = file,
-                            cardCount = processingResult.detectionResult.validCardsCount
-                        )
-                    },
-                    onFailure = { error ->
-                        ExportResult.ExportFailed(error)
-                    }
-                )
-            }
-            else -> {
-                ExportResult.ProcessingFailed(
-                    reason = when (processingResult) {
-                        is ProcessingResult.InvalidImage -> processingResult.reason
-                        is ProcessingResult.LoadError -> "Failed to load image: ${processingResult.error.message}"
-                        is ProcessingResult.DetectionFailed -> processingResult.reason
-                        is ProcessingResult.ConfigurationError -> "Configuration error: ${processingResult.error.message}"
-                        is ProcessingResult.UnexpectedError -> "Unexpected error: ${processingResult.error.message}"
-                        else -> "Unknown error"
-                    }
-                )
-            }
-        }
-    }

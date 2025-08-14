@@ -21,3 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "FanFanLokMapper"
 include(":app")
+include(":openCVLibrary480")

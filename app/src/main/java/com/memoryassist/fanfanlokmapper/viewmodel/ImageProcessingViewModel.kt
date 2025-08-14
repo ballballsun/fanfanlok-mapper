@@ -6,7 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.memoryassist.fanfanlokmapper.data.models.CardPosition
 import com.memoryassist.fanfanlokmapper.data.models.DetectionResult
-import com.memoryassist.fanfanlokmapper.domain.repository.DetectionConfig
+import com.memoryassist.fanfanlokmapper.domain.usecase.DetectionConfig
 import com.memoryassist.fanfanlokmapper.domain.repository.ImageMetadata
 import com.memoryassist.fanfanlokmapper.domain.usecase.*
 import com.memoryassist.fanfanlokmapper.utils.Logger
@@ -151,10 +151,10 @@ class ImageProcessingViewModel @Inject constructor(
                                 )
                             }
                         }
-                        is BatchProcessingUpdate.ItemComplete -> {
+                        is BatchProcessingUpdate.ItemCompleted -> {
                             results.add(update.result)
                         }
-                        is BatchProcessingUpdate.Complete -> {
+                        is BatchProcessingUpdate.BatchCompleted -> {
                             handleBatchComplete(update)
                         }
                     }
@@ -281,16 +281,13 @@ class ImageProcessingViewModel @Inject constructor(
                         _successMessage.emit("Exported ${exportResult.cardCount} cards to file")
                         _uiState.update {
                             it.copy(
-                                lastExportPath = exportResult.exportedFile.absolutePath,
+                                lastExportPath = exportResult.filePath,
                                 exportCount = it.exportCount + 1
                             )
                         }
                     }
-                    is ExportResult.ExportFailed -> {
-                        _errorMessage.emit("Export failed: ${exportResult.error.message}")
-                    }
-                    is ExportResult.ProcessingFailed -> {
-                        _errorMessage.emit("Processing failed: ${exportResult.reason}")
+                    is ExportResult.Error -> {
+                        _errorMessage.emit("Export failed: ${exportResult.message}")
                     }
                 }
             } finally {
@@ -329,6 +326,23 @@ class ImageProcessingViewModel @Inject constructor(
     }
     
     // Private helper methods
+    
+    private suspend fun handleBatchComplete(update: BatchProcessingUpdate.BatchCompleted) {
+        _processingState.value = ProcessingState.Success
+        _uiState.update {
+            it.copy(
+                isProcessing = false,
+                processingStage = null,
+                batchProgress = null
+            )
+        }
+        
+        val successfulResults = update.allResults.filterIsInstance<ProcessingResult.Success>()
+        val message = "Batch processing complete: ${successfulResults.size}/${update.allResults.size} images processed successfully"
+        _successMessage.emit(message)
+        
+        Logger.info("Batch processing completed with ${successfulResults.size} successful results")
+    }
     
     private suspend fun handleSuccessfulProcessing(result: ProcessingResult.Success) {
         _processingState.value = ProcessingState.Success
