@@ -37,7 +37,7 @@ class MainViewModel @Inject constructor(
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
     
     // Navigation State
-    private val _navigationState = MutableStateFlow(NavigationState.ImageSelection)
+    private val _navigationState = MutableStateFlow<NavigationState>(NavigationState.ImageSelection)
     val navigationState: StateFlow<NavigationState> = _navigationState.asStateFlow()
     
     // Processing History

@@ -457,7 +457,7 @@ class ImageRepository @Inject constructor(
             val historyFile = File(historyDir, "history.json")
             if (historyFile.exists()) {
                 val jsonContent = historyFile.readText()
-                val loadedHistory = json.decodeFromString<List<ProcessingHistoryEntry>>(jsonContent)
+                val loadedHistory = json.decodeFromString<List<com.memoryassist.fanfanlokmapper.data.models.ProcessingHistoryEntry>>(jsonContent)
                 processingHistory.clear()
                 processingHistory.addAll(loadedHistory)
                 Logger.info("Loaded ${processingHistory.size} history entries")

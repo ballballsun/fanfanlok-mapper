@@ -406,19 +406,6 @@ class ImageProcessingViewModel @Inject constructor(
         _errorMessage.emit("Processing failed: ${e.message}")
     }
     
-    private suspend fun handleBatchComplete(update: BatchProcessingUpdate.Complete) {
-        _processingState.value = ProcessingState.Success
-        
-        val message = "Batch processing complete: ${update.successCount}/${update.totalProcessed} successful"
-        _successMessage.emit(message)
-        
-        _uiState.update {
-            it.copy(
-                batchProgress = null,
-                lastAction = UserAction.BatchProcessed(update.totalProcessed)
-            )
-        }
-    }
 }
 
 /**

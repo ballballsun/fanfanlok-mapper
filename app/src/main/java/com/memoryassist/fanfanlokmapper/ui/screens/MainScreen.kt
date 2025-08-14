@@ -381,8 +381,8 @@ private fun StatItem(
  */
 @Composable
 private fun RecentProcessingCard(
-    recentItems: List<com.memoryassist.fanfanlokmapper.domain.repository.ProcessingHistoryEntry>,
-    onItemClick: (com.memoryassist.fanfanlokmapper.domain.repository.ProcessingHistoryEntry) -> Unit,
+    recentItems: List<com.memoryassist.fanfanlokmapper.data.models.ProcessingHistoryEntry>,
+    onItemClick: (com.memoryassist.fanfanlokmapper.data.models.ProcessingHistoryEntry) -> Unit,
     onViewAll: () -> Unit
 ) {
     Card(
@@ -429,7 +429,7 @@ private fun RecentProcessingCard(
  */
 @Composable
 private fun ProcessingHistoryItem(
-    item: com.memoryassist.fanfanlokmapper.domain.repository.ProcessingHistoryEntry,
+    item: com.memoryassist.fanfanlokmapper.data.models.ProcessingHistoryEntry,
     onClick: () -> Unit
 ) {
     Surface(
@@ -448,7 +448,7 @@ private fun ProcessingHistoryItem(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Image ${item.id.take(8)}...",
+                    text = item.fileName.take(20) + if (item.fileName.length > 20) "..." else "",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
@@ -462,7 +462,7 @@ private fun ProcessingHistoryItem(
                 horizontalAlignment = Alignment.End
             ) {
                 Text(
-                    text = "${item.cardCount} cards",
+                    text = "${item.detectedCards} cards",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     color = if (item.isSuccessful) {

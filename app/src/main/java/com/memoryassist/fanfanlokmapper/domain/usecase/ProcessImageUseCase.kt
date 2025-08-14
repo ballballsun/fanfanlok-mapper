@@ -385,6 +385,18 @@ data class DetectionConfig(
 ) {
     companion object {
         fun default() = DetectionConfig()
+        fun fast() = DetectionConfig(
+            sensitivity = 0.3f,
+            minCardSize = 40,
+            maxCardSize = 150,
+            useAdvancedFiltering = false
+        )
+        fun accurate() = DetectionConfig(
+            sensitivity = 0.7f,
+            minCardSize = 20,
+            maxCardSize = 250,
+            useAdvancedFiltering = true
+        )
     }
 }
 

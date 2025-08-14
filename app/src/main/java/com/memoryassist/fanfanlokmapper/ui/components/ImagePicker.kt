@@ -132,7 +132,6 @@ fun ImagePicker(
                         AsyncImage(
                             model = ImageRequest.Builder(LocalContext.current)
                                 .data(selectedImageUri)
-                                .crossfade(true)
                                 .build(),
                             contentDescription = "Selected Image",
                             modifier = Modifier.fillMaxSize(),

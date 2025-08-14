@@ -137,6 +137,7 @@ fun ImageProcessingScreen(
                         imageUri = imageUri,
                         cardPositions = cardPositions,
                         overlaySettings = overlaySettings,
+                        imageMetadata = uiState.imageMetadata,
                         onCardRemoved = { card ->
                             viewModel.removeCard(card)
                         },
@@ -441,6 +442,7 @@ private fun ImageWithOverlays(
     cardPositions: List<CardPosition>,
     overlaySettings: OverlaySettings,
     onCardRemoved: (CardPosition) -> Unit,
+    imageMetadata: com.memoryassist.fanfanlokmapper.domain.repository.ImageMetadata? = null,
     modifier: Modifier = Modifier
 ) {
     var imageSize by remember { mutableStateOf(Pair(0, 0)) }
@@ -450,15 +452,15 @@ private fun ImageWithOverlays(
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
                 .data(imageUri)
-                .crossfade(true)
                 .build(),
             contentDescription = "Processed Image",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Fit,
-            onSuccess = { state ->
-                val bitmap = state.result.drawable.intrinsicWidth to 
-                           state.result.drawable.intrinsicHeight
-                imageSize = bitmap
+            onSuccess = {
+                // Get image dimensions from metadata if available
+                imageSize = imageMetadata?.let { metadata ->
+                    metadata.width to metadata.height
+                } ?: (1000 to 1000) // Default size if metadata not available
             }
         )
         
