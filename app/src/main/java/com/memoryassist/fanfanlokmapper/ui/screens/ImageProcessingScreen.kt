@@ -1,0 +1,573 @@
+package com.memoryassist.fanfanlokmapper.ui.screens
+
+import android.graphics.Bitmap
+import android.net.Uri
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.memoryassist.fanfanlokmapper.data.models.CardPosition
+import com.memoryassist.fanfanlokmapper.ui.components.*
+import com.memoryassist.fanfanlokmapper.viewmodel.*
+import kotlinx.coroutines.launch
+
+/**
+ * Image processing screen with detection overlays
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ImageProcessingScreen(
+    imageUri: Uri,
+    onNavigateBack: () -> Unit,
+    onExportClick: () -> Unit,
+    viewModel: ImageProcessingViewModel = hiltViewModel(),
+    mainViewModel: MainViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val processingState by viewModel.processingState.collectAsStateWithLifecycle()
+    val detectionResult by viewModel.detectionResult.collectAsStateWithLifecycle()
+    val cardPositions by viewModel.cardPositions.collectAsStateWithLifecycle()
+    val processingProgress by viewModel.processingProgress.collectAsStateWithLifecycle()
+    val detectionConfig by viewModel.detectionConfig.collectAsStateWithLifecycle()
+    
+    val overlaySettings by mainViewModel.overlaySettings.collectAsStateWithLifecycle()
+    val exportSettings by mainViewModel.exportSettings.collectAsStateWithLifecycle()
+    
+    val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    
+    // Process image on first load
+    LaunchedEffect(imageUri) {
+        if (uiState.selectedImageUri != imageUri) {
+            viewModel.processImage(imageUri)
+        }
+    }
+    
+    // Handle messages
+    LaunchedEffect(Unit) {
+        launch {
+            viewModel.errorMessage.collect { message ->
+                snackbarHostState.showSnackbar(
+                    message = message,
+                    actionLabel = "Dismiss",
+                    duration = SnackbarDuration.Long
+                )
+            }
+        }
+        
+        launch {
+            viewModel.successMessage.collect { message ->
+                snackbarHostState.showSnackbar(
+                    message = message,
+                    duration = SnackbarDuration.Short
+                )
+            }
+        }
+    }
+    
+    Scaffold(
+        topBar = {
+            ProcessingTopBar(
+                processingState = processingState,
+                onNavigateBack = onNavigateBack,
+                onSettingsClick = { /* Open settings */ },
+                onHelpClick = { /* Show help */ }
+            )
+        },
+        bottomBar = {
+            ProcessingBottomBar(
+                isProcessing = uiState.isProcessing,
+                hasResults = cardPositions.isNotEmpty(),
+                onReprocess = { viewModel.reprocessCurrentImage() },
+                onExport = onExportClick,
+                onClear = { viewModel.clearAllCards() },
+                exportSettings = exportSettings
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // Progress indicator
+                AnimatedVisibility(
+                    visible = uiState.isProcessing,
+                    enter = expandVertically(),
+                    exit = shrinkVertically()
+                ) {
+                    ProcessingProgressBar(
+                        progress = processingProgress,
+                        stage = uiState.processingStage,
+                        onCancel = { viewModel.cancelProcessing() }
+                    )
+                }
+                
+                // Main content
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    // Image with overlays
+                    ImageWithOverlays(
+                        imageUri = imageUri,
+                        cardPositions = cardPositions,
+                        overlaySettings = overlaySettings,
+                        onCardRemoved = { card ->
+                            viewModel.removeCard(card)
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    
+                    // Floating action buttons
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Toggle overlay settings
+                        SmallFloatingActionButton(
+                            onClick = {
+                                mainViewModel.updateOverlaySettings {
+                                    withConfidence(!showConfidence)
+                                }
+                            },
+                            containerColor = if (overlaySettings.showConfidence) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Percent,
+                                contentDescription = "Toggle Confidence"
+                            )
+                        }
+                        
+                        SmallFloatingActionButton(
+                            onClick = {
+                                mainViewModel.updateOverlaySettings {
+                                    withGridLines(!showGridLines)
+                                }
+                            },
+                            containerColor = if (overlaySettings.showGridLines) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Grid3x3,
+                                contentDescription = "Toggle Grid"
+                            )
+                        }
+                        
+                        SmallFloatingActionButton(
+                            onClick = { viewModel.restoreAllCards() }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Restore,
+                                contentDescription = "Restore All"
+                            )
+                        }
+                    }
+                }
+                
+                // Results summary
+                AnimatedVisibility(
+                    visible = detectionResult != null,
+                    enter = slideInVertically(initialOffsetY = { it }),
+                    exit = slideOutVertically(targetOffsetY = { it })
+                ) {
+                    detectionResult?.let { result ->
+                        ResultsSummaryCard(
+                            detectionResult = result,
+                            removedCount = uiState.removedCardsCount,
+                            processingTime = uiState.lastProcessingTime,
+                            onToggleDetails = { /* Show detailed results */ }
+                        )
+                    }
+                }
+            }
+            
+            // Config preset buttons
+            if (processingState == ProcessingState.Idle) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ConfigPreset.values().forEach { preset ->
+                        ElevatedFilterChip(
+                            selected = false,
+                            onClick = { viewModel.usePresetConfig(preset) },
+                            label = { Text(preset.name) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Top app bar for processing screen
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProcessingTopBar(
+    processingState: ProcessingState,
+    onNavigateBack: () -> Unit,
+    onSettingsClick: () -> Unit,
+    onHelpClick: () -> Unit
+) {
+    TopAppBar(
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Image Processing")
+                
+                // Processing state indicator
+                when (processingState) {
+                    is ProcessingState.Loading,
+                    is ProcessingState.Detecting,
+                    is ProcessingState.Filtering,
+                    is ProcessingState.Mapping -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                    is ProcessingState.Success -> {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Success",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    is ProcessingState.Failed -> {
+                        Icon(
+                            imageVector = Icons.Default.Error,
+                            contentDescription = "Failed",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    else -> {}
+                }
+            }
+        },
+        navigationIcon = {
+            IconButton(onClick = onNavigateBack) {
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Back"
+                )
+            }
+        },
+        actions = {
+            IconButton(onClick = onSettingsClick) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Settings"
+                )
+            }
+            IconButton(onClick = onHelpClick) {
+                Icon(
+                    imageVector = Icons.Default.HelpOutline,
+                    contentDescription = "Help"
+                )
+            }
+        }
+    )
+}
+
+/**
+ * Bottom bar with processing actions
+ */
+@Composable
+private fun ProcessingBottomBar(
+    isProcessing: Boolean,
+    hasResults: Boolean,
+    onReprocess: () -> Unit,
+    onExport: () -> Unit,
+    onClear: () -> Unit,
+    exportSettings: ExportSettings
+) {
+    BottomAppBar {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            // Reprocess button
+            TextButton(
+                onClick = onReprocess,
+                enabled = !isProcessing
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Reprocess",
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Reprocess")
+            }
+            
+            // Export button
+            Button(
+                onClick = onExport,
+                enabled = hasResults && !isProcessing
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FileDownload,
+                    contentDescription = "Export",
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Export")
+            }
+            
+            // Clear button
+            TextButton(
+                onClick = onClear,
+                enabled = hasResults && !isProcessing,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Clear,
+                    contentDescription = "Clear",
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Clear")
+            }
+        }
+    }
+}
+
+/**
+ * Processing progress bar
+ */
+@Composable
+private fun ProcessingProgressBar(
+    progress: Float,
+    stage: String?,
+    onCancel: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stage ?: "Processing...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                
+                TextButton(onClick = onCancel) {
+                    Text("Cancel")
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            Text(
+                text = "${(progress * 100).toInt()}%",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+    }
+}
+
+/**
+ * Image display with card overlays
+ */
+@Composable
+private fun ImageWithOverlays(
+    imageUri: Uri,
+    cardPositions: List<CardPosition>,
+    overlaySettings: OverlaySettings,
+    onCardRemoved: (CardPosition) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var imageSize by remember { mutableStateOf(Pair(0, 0)) }
+    
+    Box(modifier = modifier) {
+        // Display image
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(imageUri)
+                .crossfade(true)
+                .build(),
+            contentDescription = "Processed Image",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit,
+            onSuccess = { state ->
+                val bitmap = state.result.drawable.intrinsicWidth to 
+                           state.result.drawable.intrinsicHeight
+                imageSize = bitmap
+            }
+        )
+        
+        // Overlay detected cards
+        if (imageSize.first > 0 && imageSize.second > 0) {
+            CardOverlay(
+                cardPositions = cardPositions,
+                imageWidth = imageSize.first,
+                imageHeight = imageSize.second,
+                onCardRemoved = onCardRemoved,
+                showConfidence = overlaySettings.showConfidence,
+                showGridPosition = overlaySettings.showGridPosition,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
+/**
+ * Results summary card
+ */
+@Composable
+private fun ResultsSummaryCard(
+    detectionResult: com.memoryassist.fanfanlokmapper.data.models.DetectionResult,
+    removedCount: Int,
+    processingTime: Long,
+    onToggleDetails: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Detection Results",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                IconButton(onClick = onToggleDetails) {
+                    Icon(
+                        imageVector = Icons.Default.ExpandMore,
+                        contentDescription = "Toggle Details"
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                ResultStat(
+                    label = "Detected",
+                    value = detectionResult.totalCardsDetected.toString(),
+                    color = MaterialTheme.colorScheme.primary
+                )
+                
+                ResultStat(
+                    label = "Valid",
+                    value = detectionResult.validCardsCount.toString(),
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                
+                ResultStat(
+                    label = "Removed",
+                    value = removedCount.toString(),
+                    color = MaterialTheme.colorScheme.error
+                )
+                
+                ResultStat(
+                    label = "Time",
+                    value = "${processingTime}ms",
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Individual result statistic
+ */
+@Composable
+private fun ResultStat(
+    label: String,
+    value: String,
+    color: androidx.compose.ui.graphics.Color
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = color
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
