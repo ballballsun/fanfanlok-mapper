@@ -9,6 +9,7 @@ import com.memoryassist.fanfanlokmapper.data.export.ExportFormat
 import com.memoryassist.fanfanlokmapper.data.models.CardPosition
 import com.memoryassist.fanfanlokmapper.data.models.DetectionResult
 import com.memoryassist.fanfanlokmapper.domain.repository.*
+import com.memoryassist.fanfanlokmapper.domain.repository.DetectionConfig
 import com.memoryassist.fanfanlokmapper.utils.Constants
 import com.memoryassist.fanfanlokmapper.utils.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -30,7 +31,8 @@ import javax.inject.Singleton
 @Singleton
 class ImageRepository @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val jsonExporter: JsonExporter
+    private val jsonExporter: JsonExporter,
+    private val detectCardsUseCase: com.memoryassist.fanfanlokmapper.domain.usecase.DetectCardsUseCase
 ) : ImageRepositoryInterface {
     
     // In-memory cache for detection results
@@ -122,13 +124,22 @@ class ImageRepository @Inject constructor(
     // Processing Operations
     
     override suspend fun processImage(bitmap: Bitmap): DetectionResult {
-        // This would typically call the detection use case
-        // For now, returning a placeholder
-        return DetectionResult.failure(
-            error = "Direct bitmap processing not implemented - use ProcessImageUseCase",
-            imageWidth = bitmap.width,
-            imageHeight = bitmap.height
-        )
+        Logger.info("🔧 Starting bitmap processing via repository - ${bitmap.width}x${bitmap.height}")
+        return try {
+            val config = DetectionConfig().copy(
+                useAdaptiveSizeFilter = true,
+                enhanceContrast = true,
+                useEdgeDetection = true
+            )
+            detectCardsUseCase.execute(bitmap, config)
+        } catch (e: Exception) {
+            Logger.error("Failed to process image in repository", e)
+            DetectionResult.failure(
+                error = "Processing failed: ${e.message}",
+                imageWidth = bitmap.width,
+                imageHeight = bitmap.height
+            )
+        }
     }
     
     override suspend fun processImageFromUri(uri: Uri): DetectionResult {

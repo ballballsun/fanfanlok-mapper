@@ -41,6 +41,7 @@ fun CardOverlay(
     imageWidth: Int,
     imageHeight: Int,
     onCardRemoved: (CardPosition) -> Unit,
+    actualImageBounds: androidx.compose.ui.geometry.Rect = androidx.compose.ui.geometry.Rect.Zero,
     onCardSelected: ((CardPosition) -> Unit)? = null,
     showConfidence: Boolean = true,
     showGridPosition: Boolean = false,
@@ -63,8 +64,7 @@ fun CardOverlay(
                             val tappedCard = findCardAtPosition(
                                 offset,
                                 cardPositions,
-                                size.width.toFloat(),
-                                size.height.toFloat(),
+                                actualImageBounds,
                                 imageWidth.toFloat(),
                                 imageHeight.toFloat()
                             )
@@ -80,8 +80,7 @@ fun CardOverlay(
                             val pressedCard = findCardAtPosition(
                                 offset,
                                 cardPositions,
-                                size.width.toFloat(),
-                                size.height.toFloat(),
+                                actualImageBounds,
                                 imageWidth.toFloat(),
                                 imageHeight.toFloat()
                             )
@@ -100,6 +99,7 @@ fun CardOverlay(
                 if (!card.isManuallyRemoved) {
                     drawCardOverlay(
                         card = card,
+                        actualImageBounds = actualImageBounds,
                         imageWidth = imageWidth.toFloat(),
                         imageHeight = imageHeight.toFloat(),
                         isSelected = card == selectedCard,
@@ -114,7 +114,8 @@ fun CardOverlay(
             if (showGridPosition) {
                 drawGridLines(
                     rows = Constants.GRID_ROWS,
-                    columns = Constants.GRID_COLUMNS
+                    columns = Constants.GRID_COLUMNS,
+                    actualImageBounds = actualImageBounds
                 )
             }
         }
@@ -152,6 +153,7 @@ fun CardOverlay(
  */
 private fun DrawScope.drawCardOverlay(
     card: CardPosition,
+    actualImageBounds: androidx.compose.ui.geometry.Rect,
     imageWidth: Float,
     imageHeight: Float,
     isSelected: Boolean,
@@ -159,12 +161,22 @@ private fun DrawScope.drawCardOverlay(
     showConfidence: Boolean,
     showGridPosition: Boolean
 ) {
-    // Calculate scaled position
-    val scaleX = size.width / imageWidth
-    val scaleY = size.height / imageHeight
+    // Use actual image bounds if available, otherwise fall back to full canvas
+    val imageBounds = if (actualImageBounds != androidx.compose.ui.geometry.Rect.Zero) {
+        actualImageBounds
+    } else {
+        androidx.compose.ui.geometry.Rect(
+            offset = Offset.Zero,
+            size = Size(size.width, size.height)
+        )
+    }
     
-    val scaledLeft = card.left * scaleX
-    val scaledTop = card.top * scaleY
+    // Calculate scaled position within the actual image display area
+    val scaleX = imageBounds.width / imageWidth
+    val scaleY = imageBounds.height / imageHeight
+    
+    val scaledLeft = imageBounds.left + (card.left * scaleX)
+    val scaledTop = imageBounds.top + (card.top * scaleY)
     val scaledWidth = card.width * scaleX
     val scaledHeight = card.height * scaleY
     
@@ -261,20 +273,32 @@ private fun DrawScope.drawCardOverlay(
  */
 private fun DrawScope.drawGridLines(
     rows: Int,
-    columns: Int
+    columns: Int,
+    actualImageBounds: androidx.compose.ui.geometry.Rect
 ) {
-    val cellWidth = size.width / columns
-    val cellHeight = size.height / rows
+    // Use actual image bounds if available, otherwise fall back to full canvas
+    val imageBounds = if (actualImageBounds != androidx.compose.ui.geometry.Rect.Zero) {
+        actualImageBounds
+    } else {
+        androidx.compose.ui.geometry.Rect(
+            offset = Offset.Zero,
+            size = Size(size.width, size.height)
+        )
+    }
+    
+    val cellWidth = imageBounds.width / columns
+    val cellHeight = imageBounds.height / rows
     
     val strokeColor = Color.Gray.copy(alpha = 0.3f)
     val strokeWidth = 1.dp.toPx()
     
     // Draw vertical lines
     for (i in 1 until columns) {
+        val x = imageBounds.left + (i * cellWidth)
         drawLine(
             color = strokeColor,
-            start = Offset(i * cellWidth, 0f),
-            end = Offset(i * cellWidth, size.height),
+            start = Offset(x, imageBounds.top),
+            end = Offset(x, imageBounds.bottom),
             strokeWidth = strokeWidth,
             pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 5f), 0f)
         )
@@ -282,10 +306,11 @@ private fun DrawScope.drawGridLines(
     
     // Draw horizontal lines
     for (i in 1 until rows) {
+        val y = imageBounds.top + (i * cellHeight)
         drawLine(
             color = strokeColor,
-            start = Offset(0f, i * cellHeight),
-            end = Offset(size.width, i * cellHeight),
+            start = Offset(imageBounds.left, y),
+            end = Offset(imageBounds.right, y),
             strokeWidth = strokeWidth,
             pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 5f), 0f)
         )
@@ -298,21 +323,28 @@ private fun DrawScope.drawGridLines(
 private fun findCardAtPosition(
     offset: Offset,
     cards: List<CardPosition>,
-    canvasWidth: Float,
-    canvasHeight: Float,
+    actualImageBounds: androidx.compose.ui.geometry.Rect,
     imageWidth: Float,
     imageHeight: Float
 ): CardPosition? {
-    val scaleX = canvasWidth / imageWidth
-    val scaleY = canvasHeight / imageHeight
+    // Use actual image bounds if available
+    val imageBounds = if (actualImageBounds != androidx.compose.ui.geometry.Rect.Zero) {
+        actualImageBounds
+    } else {
+        // If no bounds provided, assume full canvas (fallback)
+        return null
+    }
+    
+    val scaleX = imageBounds.width / imageWidth
+    val scaleY = imageBounds.height / imageHeight
     
     return cards.firstOrNull { card ->
         if (card.isManuallyRemoved) return@firstOrNull false
         
-        val scaledLeft = card.left * scaleX
-        val scaledTop = card.top * scaleY
-        val scaledRight = card.right * scaleX
-        val scaledBottom = card.bottom * scaleY
+        val scaledLeft = imageBounds.left + (card.left * scaleX)
+        val scaledTop = imageBounds.top + (card.top * scaleY)
+        val scaledRight = imageBounds.left + (card.right * scaleX)
+        val scaledBottom = imageBounds.top + (card.bottom * scaleY)
         
         offset.x >= scaledLeft && 
         offset.x <= scaledRight && 

@@ -10,6 +10,7 @@ import com.memoryassist.fanfanlokmapper.domain.usecase.DetectionConfig
 import com.memoryassist.fanfanlokmapper.domain.repository.ImageMetadata
 import com.memoryassist.fanfanlokmapper.domain.usecase.*
 import com.memoryassist.fanfanlokmapper.utils.Logger
+import com.memoryassist.fanfanlokmapper.utils.ImageProcessor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
@@ -23,7 +24,8 @@ import javax.inject.Inject
 class ImageProcessingViewModel @Inject constructor(
     private val processImageUseCase: ProcessImageUseCase,
     private val detectCardsUseCase: DetectCardsUseCase,
-    private val filterResultsUseCase: FilterResultsUseCase
+    private val filterResultsUseCase: FilterResultsUseCase,
+    private val imageProcessor: ImageProcessor
 ) : ViewModel() {
     
     // UI State
@@ -60,6 +62,10 @@ class ImageProcessingViewModel @Inject constructor(
     // Detection configuration
     private val _detectionConfig = MutableStateFlow(DetectionConfig.default())
     val detectionConfig: StateFlow<DetectionConfig> = _detectionConfig.asStateFlow()
+    
+    // Processed image with rectangles drawn
+    private val _processedImageBitmap = MutableStateFlow<Bitmap?>(null)
+    val processedImageBitmap: StateFlow<Bitmap?> = _processedImageBitmap.asStateFlow()
     
     /**
      * Process a single image
@@ -181,6 +187,13 @@ class ImageProcessingViewModel @Inject constructor(
                 )
             }
             
+            // Regenerate processed image with updated card positions
+            if (updatedResult.getValidCards().isNotEmpty()) {
+                generateProcessedImage(showConfidence = true, showGridPosition = false)
+            } else {
+                _processedImageBitmap.value = null
+            }
+            
             Logger.logUserInteraction("Card removed", "Card ${card.id}")
             _successMessage.emit("Card removed from detection")
         }
@@ -208,6 +221,9 @@ class ImageProcessingViewModel @Inject constructor(
                 )
             }
             
+            // Regenerate processed image with restored cards
+            generateProcessedImage(showConfidence = true, showGridPosition = false)
+            
             Logger.logUserInteraction("All cards restored")
             _successMessage.emit("All cards restored")
         }
@@ -220,6 +236,7 @@ class ImageProcessingViewModel @Inject constructor(
         viewModelScope.launch {
             _detectionResult.value = null
             _cardPositions.value = emptyList()
+            _processedImageBitmap.value = null
             
             _uiState.update {
                 it.copy(
@@ -359,6 +376,11 @@ class ImageProcessingViewModel @Inject constructor(
             )
         }
         
+        // Automatically generate processed image with rectangles
+        if (result.detectionResult.getValidCards().isNotEmpty()) {
+            generateProcessedImage(showConfidence = true, showGridPosition = false)
+        }
+        
         val message = "Detected ${result.detectionResult.validCardsCount} cards" +
                      if (result.fromCache) " (from cache)" else ""
         _successMessage.emit(message)
@@ -405,6 +427,70 @@ class ImageProcessingViewModel @Inject constructor(
         Logger.error("Processing exception", e)
         _processingState.value = ProcessingState.Failed(e.message ?: "Unknown error")
         _errorMessage.emit("Processing failed: ${e.message}")
+    }
+    
+    /**
+     * Generate processed image with detection rectangles
+     */
+    fun generateProcessedImage(showConfidence: Boolean = true, showGridPosition: Boolean = false) {
+        viewModelScope.launch {
+            try {
+                val uri = _uiState.value.selectedImageUri ?: return@launch
+                val cardPositions = _cardPositions.value
+                
+                if (cardPositions.isEmpty()) {
+                    _processedImageBitmap.value = null
+                    return@launch
+                }
+                
+                _uiState.update { it.copy(processingStage = "Generating processed image...") }
+                
+                // Load original bitmap
+                val bitmapResult = imageProcessor.loadBitmapFromUri(uri)
+                if (bitmapResult.isFailure) {
+                    _errorMessage.emit("Failed to load original image")
+                    return@launch
+                }
+                
+                val originalBitmap = bitmapResult.getOrThrow()
+                
+                // Draw rectangles on the image
+                val processedBitmap = imageProcessor.drawDetectionRectangles(
+                    originalBitmap = originalBitmap,
+                    cardPositions = cardPositions,
+                    showConfidence = showConfidence,
+                    showGridPosition = showGridPosition
+                )
+                
+                _processedImageBitmap.value = processedBitmap
+                
+                // Save processed image to temporary storage
+                val timestamp = System.currentTimeMillis()
+                val filename = "processed_image_$timestamp.jpg"
+                val saveResult = imageProcessor.saveProcessedImageToTemp(processedBitmap, filename)
+                
+                if (saveResult.isSuccess) {
+                    val savedPath = saveResult.getOrThrow()
+                    Logger.info("Processed image saved to: $savedPath")
+                    _successMessage.emit("Generated and saved processed image with ${cardPositions.size} detection rectangles")
+                } else {
+                    _successMessage.emit("Generated processed image with ${cardPositions.size} detection rectangles")
+                }
+                
+            } catch (e: Exception) {
+                Logger.error("Failed to generate processed image", e)
+                _errorMessage.emit("Failed to generate processed image: ${e.message}")
+            } finally {
+                _uiState.update { it.copy(processingStage = null) }
+            }
+        }
+    }
+    
+    /**
+     * Clear processed image
+     */
+    fun clearProcessedImage() {
+        _processedImageBitmap.value = null
     }
     
     /**

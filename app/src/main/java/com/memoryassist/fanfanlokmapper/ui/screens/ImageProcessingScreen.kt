@@ -13,8 +13,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -48,6 +52,7 @@ fun ImageProcessingScreen(
     val cardPositions by viewModel.cardPositions.collectAsStateWithLifecycle()
     val processingProgress by viewModel.processingProgress.collectAsStateWithLifecycle()
     val detectionConfig by viewModel.detectionConfig.collectAsStateWithLifecycle()
+    val processedImageBitmap by viewModel.processedImageBitmap.collectAsStateWithLifecycle()
     
     val overlaySettings by mainViewModel.overlaySettings.collectAsStateWithLifecycle()
     val exportSettings by mainViewModel.exportSettings.collectAsStateWithLifecycle()
@@ -132,14 +137,21 @@ fun ImageProcessingScreen(
                         .weight(1f)
                         .fillMaxWidth()
                 ) {
-                    // Image with overlays
-                    ImageWithOverlays(
-                        imageUri = imageUri,
+                    // Display processed image or original with overlays
+                    ProcessedImageDisplay(
+                        originalImageUri = imageUri,
+                        processedBitmap = processedImageBitmap,
                         cardPositions = cardPositions,
                         overlaySettings = overlaySettings,
                         imageMetadata = uiState.imageMetadata,
                         onCardRemoved = { card ->
                             viewModel.removeCard(card)
+                        },
+                        onRegenerateImage = {
+                            viewModel.generateProcessedImage(
+                                showConfidence = overlaySettings.showConfidence,
+                                showGridPosition = overlaySettings.showGridPosition
+                            )
                         },
                         modifier = Modifier.fillMaxSize()
                     )
@@ -151,11 +163,46 @@ fun ImageProcessingScreen(
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Toggle overlay settings
+                        // Toggle processed image display
+                        SmallFloatingActionButton(
+                            onClick = {
+                                if (processedImageBitmap != null) {
+                                    viewModel.clearProcessedImage()
+                                } else {
+                                    viewModel.generateProcessedImage(
+                                        showConfidence = overlaySettings.showConfidence,
+                                        showGridPosition = overlaySettings.showGridPosition
+                                    )
+                                }
+                            },
+                            containerColor = if (processedImageBitmap != null) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (processedImageBitmap != null) {
+                                    Icons.Default.Visibility
+                                } else {
+                                    Icons.Default.VisibilityOff
+                                },
+                                contentDescription = "Toggle Processed Image"
+                            )
+                        }
+                        
+                        // Toggle confidence display
                         SmallFloatingActionButton(
                             onClick = {
                                 mainViewModel.updateOverlaySettings {
                                     withConfidence(!showConfidence)
+                                }
+                                // Regenerate processed image if it exists
+                                if (processedImageBitmap != null) {
+                                    viewModel.generateProcessedImage(
+                                        showConfidence = !overlaySettings.showConfidence,
+                                        showGridPosition = overlaySettings.showGridPosition
+                                    )
                                 }
                             },
                             containerColor = if (overlaySettings.showConfidence) {
@@ -170,10 +217,18 @@ fun ImageProcessingScreen(
                             )
                         }
                         
+                        // Toggle grid position display
                         SmallFloatingActionButton(
                             onClick = {
                                 mainViewModel.updateOverlaySettings {
                                     withGridLines(!showGridLines)
+                                }
+                                // Regenerate processed image if it exists
+                                if (processedImageBitmap != null) {
+                                    viewModel.generateProcessedImage(
+                                        showConfidence = overlaySettings.showConfidence,
+                                        showGridPosition = !overlaySettings.showGridLines
+                                    )
                                 }
                             },
                             containerColor = if (overlaySettings.showGridLines) {
@@ -446,6 +501,7 @@ private fun ImageWithOverlays(
     modifier: Modifier = Modifier
 ) {
     var imageSize by remember { mutableStateOf(Pair(0, 0)) }
+    var actualImageBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
     
     Box(modifier = modifier) {
         // Display image
@@ -454,7 +510,37 @@ private fun ImageWithOverlays(
                 .data(imageUri)
                 .build(),
             contentDescription = "Processed Image",
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { coordinates ->
+                    // Calculate actual image display bounds considering ContentScale.Fit
+                    val containerWidth = coordinates.size.width.toFloat()
+                    val containerHeight = coordinates.size.height.toFloat()
+                    
+                    if (imageSize.first > 0 && imageSize.second > 0) {
+                        val imageAspectRatio = imageSize.first.toFloat() / imageSize.second.toFloat()
+                        val containerAspectRatio = containerWidth / containerHeight
+                        
+                        val (displayWidth, displayHeight, offsetX, offsetY) = if (imageAspectRatio > containerAspectRatio) {
+                            // Image is wider - fit to container width
+                            val displayWidth = containerWidth
+                            val displayHeight = containerWidth / imageAspectRatio
+                            val offsetY = (containerHeight - displayHeight) / 2f
+                            Tuple4(displayWidth, displayHeight, 0f, offsetY)
+                        } else {
+                            // Image is taller - fit to container height
+                            val displayHeight = containerHeight
+                            val displayWidth = containerHeight * imageAspectRatio
+                            val offsetX = (containerWidth - displayWidth) / 2f
+                            Tuple4(displayWidth, displayHeight, offsetX, 0f)
+                        }
+                        
+                        actualImageBounds = androidx.compose.ui.geometry.Rect(
+                            offset = Offset(offsetX, offsetY),
+                            size = Size(displayWidth, displayHeight)
+                        )
+                    }
+                },
             contentScale = ContentScale.Fit,
             onSuccess = {
                 // Get image dimensions from metadata if available
@@ -465,11 +551,12 @@ private fun ImageWithOverlays(
         )
         
         // Overlay detected cards
-        if (imageSize.first > 0 && imageSize.second > 0) {
+        if (imageSize.first > 0 && imageSize.second > 0 && actualImageBounds != androidx.compose.ui.geometry.Rect.Zero) {
             CardOverlay(
                 cardPositions = cardPositions,
                 imageWidth = imageSize.first,
                 imageHeight = imageSize.second,
+                actualImageBounds = actualImageBounds,
                 onCardRemoved = onCardRemoved,
                 showConfidence = overlaySettings.showConfidence,
                 showGridPosition = overlaySettings.showGridPosition,
@@ -478,6 +565,9 @@ private fun ImageWithOverlays(
         }
     }
 }
+
+// Helper data class for tuple
+private data class Tuple4<T>(val first: T, val second: T, val third: T, val fourth: T)
 
 /**
  * Results summary card
@@ -573,5 +663,74 @@ private fun ResultStat(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+/**
+ * Component that displays either the processed image with rectangles or original with overlays
+ */
+@Composable
+private fun ProcessedImageDisplay(
+    originalImageUri: Uri,
+    processedBitmap: Bitmap?,
+    cardPositions: List<CardPosition>,
+    overlaySettings: OverlaySettings,
+    imageMetadata: com.memoryassist.fanfanlokmapper.domain.repository.ImageMetadata?,
+    onCardRemoved: (CardPosition) -> Unit,
+    onRegenerateImage: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier) {
+        if (processedBitmap != null) {
+            // Display processed image with rectangles drawn directly
+            Image(
+                bitmap = processedBitmap.asImageBitmap(),
+                contentDescription = "Processed Image with Detections",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit
+            )
+            
+            // Show info text
+            Card(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+                )
+            ) {
+                Text(
+                    text = "Processed Image View\n${cardPositions.size} detections shown",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(8.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            // Fallback to original image with overlays
+            ImageWithOverlays(
+                imageUri = originalImageUri,
+                cardPositions = cardPositions,
+                overlaySettings = overlaySettings,
+                imageMetadata = imageMetadata,
+                onCardRemoved = onCardRemoved,
+                modifier = Modifier.fillMaxSize()
+            )
+            
+            // Show generate button if we have detections
+            if (cardPositions.isNotEmpty()) {
+                FloatingActionButton(
+                    onClick = onRegenerateImage,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PhotoCamera,
+                        contentDescription = "Generate Processed Image"
+                    )
+                }
+            }
+        }
     }
 }

@@ -42,14 +42,14 @@ class BorderDetector @Inject constructor() {
         if (finalPositions.size < 5) {
             Logger.warning("Primary detection found only ${finalPositions.size} cards, trying fallback methods")
             
-            // Try with more relaxed thresholds
+            // Try with even more relaxed thresholds
             val relaxedThresholds = thresholds.copy(
-                minArea = (thresholds.minArea * 0.5).toInt(),
-                maxArea = (thresholds.maxArea * 2.0).toInt(),
-                minWidth = (thresholds.minWidth * 0.5).toInt(),
-                minHeight = (thresholds.minHeight * 0.5).toInt(),
-                aspectRatioMin = 0.3,
-                aspectRatioMax = 3.0
+                minArea = 50,  // Even lower minimum
+                maxArea = (thresholds.maxArea * 3.0).toInt(),
+                minWidth = 10,  // Very low minimum width
+                minHeight = 15, // Very low minimum height
+                aspectRatioMin = 0.1,  // Very lenient
+                aspectRatioMax = 10.0   // Very lenient
             )
             
             Logger.info("🔄 Trying fallback with relaxed thresholds")
@@ -173,8 +173,8 @@ class BorderDetector @Inject constructor() {
                 Logger.debug("Contour $index: area=$area, vertices=$vertices")
             }
             
-            // Check if it's roughly rectangular (4-6 vertices allowing for imperfect detection)
-            if (vertices in 4..6) {
+            // Check if it's roughly rectangular (3-8 vertices allowing for imperfect detection)
+            if (vertices in 3..8) {
                 // Fit a rotated rectangle
                 val rect = Imgproc.minAreaRect(MatOfPoint2f(*contour.toArray()))
                 val sizeStr = "${String.format("%.1f", rect.size.width)}x${String.format("%.1f", rect.size.height)}"
@@ -212,7 +212,7 @@ class BorderDetector @Inject constructor() {
         val contour2f = MatOfPoint2f(*contour.toArray())
         val approx2f = MatOfPoint2f()
         
-        val epsilon = Constants.CONTOUR_APPROXIMATION_EPSILON * Imgproc.arcLength(contour2f, true)
+        val epsilon = 0.05 * Imgproc.arcLength(contour2f, true)  // More lenient approximation
         Imgproc.approxPolyDP(contour2f, approx2f, epsilon, true)
         
         val approx = MatOfPoint(*approx2f.toArray())

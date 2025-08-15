@@ -10,7 +10,13 @@ import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import org.opencv.core.CvType
 import org.opencv.core.Scalar
+import org.opencv.core.Point
+import org.opencv.core.Rect2d
+import com.memoryassist.fanfanlokmapper.data.models.CardPosition
 import java.io.InputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -142,33 +148,27 @@ class ImageProcessor @Inject constructor(@ApplicationContext private val context
     fun calculateAdaptiveThresholds(imageWidth: Int, imageHeight: Int): ThresholdParams {
         val totalArea = imageWidth * imageHeight
         
-        // For memory card games, each card typically takes up 1/30 to 1/120 of total area
-        // Start with more conservative estimate and allow wide range
-        val expectedCardArea = totalArea / 80.0  // Much smaller expectation
+        // For memory card games in screenshots, cards are often much smaller
+        // Based on your log: largest card was 4,531 pixels, most were 100-1,500
+        // Set very aggressive minimum to capture small cards
+        val minArea = 100  // Very low minimum to capture small cards
+        val maxArea = maxOf(20000, totalArea / 30)  // Allow larger range
         
-        // Use reasonable bounds based on typical card sizes
-        val minArea = maxOf(1000, (expectedCardArea * 0.3).toInt())  // Use constant minimum or calculated
-        val maxArea = minOf(50000, (expectedCardArea * 4.0).toInt()) // Use constant maximum or calculated
-        
-        // Calculate expected dimensions (assuming roughly 0.7 aspect ratio for cards)
-        val expectedHeight = kotlin.math.sqrt(expectedCardArea / 0.7)
-        val expectedWidth = expectedHeight * 0.7
-        
-        // Use reasonable minimum dimensions
-        val minWidth = maxOf(30, (expectedWidth * 0.3).toInt())
-        val minHeight = maxOf(40, (expectedHeight * 0.3).toInt())
+        // Use very low minimum dimensions to catch small cards
+        val minWidth = 15   // Much lower than before (was 30)
+        val minHeight = 20  // Much lower than before (was 40)
         
         Logger.info("Adaptive thresholds calculated - Image: ${imageWidth}x${imageHeight}, TotalArea: $totalArea")
-        Logger.info("Expected card area: $expectedCardArea, MinArea: $minArea, MaxArea: $maxArea")
-        Logger.info("Expected dimensions: ${expectedWidth}x${expectedHeight}, MinDim: ${minWidth}x${minHeight}")
+        Logger.info("AGGRESSIVE thresholds: MinArea: $minArea, MaxArea: $maxArea")
+        Logger.info("AGGRESSIVE dimensions: MinWidth: ${minWidth}, MinHeight: ${minHeight}")
         
         return ThresholdParams(
             minArea = minArea,
             maxArea = maxArea,
             minWidth = minWidth,
             minHeight = minHeight,
-            aspectRatioMin = 0.3, // Even more lenient aspect ratio
-            aspectRatioMax = 3.0   // Even more lenient aspect ratio
+            aspectRatioMin = 0.2, // Very lenient aspect ratio
+            aspectRatioMax = 5.0   // Very lenient aspect ratio
         )
     }
     
@@ -190,6 +190,151 @@ class ImageProcessor @Inject constructor(@ApplicationContext private val context
         org.opencv.core.Core.addWeighted(visualization, 0.7, greenEdges, 0.3, 0.0, visualization)
         
         return matToBitmap(visualization)
+    }
+    
+    /**
+     * Draw detection rectangles directly on the image
+     */
+    fun drawDetectionRectangles(
+        originalBitmap: Bitmap,
+        cardPositions: List<CardPosition>,
+        showConfidence: Boolean = true,
+        showGridPosition: Boolean = false
+    ): Bitmap {
+        val mat = bitmapToMat(originalBitmap)
+        val result = Mat()
+        mat.copyTo(result)
+        
+        Logger.info("Drawing ${cardPositions.size} rectangles on image ${mat.cols()}x${mat.rows()}")
+        
+        cardPositions.forEach { card ->
+            if (!card.isManuallyRemoved) {
+                drawSingleRectangle(result, card, showConfidence, showGridPosition)
+            }
+        }
+        
+        val processedBitmap = matToBitmap(result)
+        Logger.info("Generated processed image with detection rectangles")
+        return processedBitmap
+    }
+    
+    /**
+     * Draw a single detection rectangle on the image
+     */
+    private fun drawSingleRectangle(
+        mat: Mat,
+        card: CardPosition,
+        showConfidence: Boolean,
+        showGridPosition: Boolean
+    ) {
+        // Green color for rectangles (BGR format)
+        val greenColor = Scalar(0.0, 255.0, 0.0)
+        val textColor = Scalar(0.0, 255.0, 0.0)
+        val thickness = 3
+        
+        // Draw rectangle
+        val topLeft = Point(card.left.toDouble(), card.top.toDouble())
+        val bottomRight = Point(card.right.toDouble(), card.bottom.toDouble())
+        
+        Imgproc.rectangle(mat, topLeft, bottomRight, greenColor, thickness)
+        
+        // Draw confidence text if enabled
+        if (showConfidence) {
+            val confidenceText = "${(card.confidence * 100).toInt()}%"
+            val textPosition = Point(card.left.toDouble() + 5, card.top.toDouble() + 20)
+            
+            Imgproc.putText(
+                mat,
+                confidenceText,
+                textPosition,
+                Imgproc.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                textColor,
+                2
+            )
+        }
+        
+        // Draw grid position if enabled and available
+        if (showGridPosition && card.hasValidGridPosition) {
+            val gridText = "${card.gridRow + 1},${card.gridColumn + 1}"
+            val textWidth = gridText.length * 12 // Approximate text width
+            val textPosition = Point(
+                card.right.toDouble() - textWidth - 5,
+                card.bottom.toDouble() - 5
+            )
+            
+            Imgproc.putText(
+                mat,
+                gridText,
+                textPosition,
+                Imgproc.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                textColor,
+                2
+            )
+        }
+        
+        // Draw center crosshair for better visibility
+        val centerX = card.centerX.toDouble()
+        val centerY = card.centerY.toDouble()
+        val crosshairSize = 8.0
+        
+        // Horizontal line
+        Imgproc.line(
+            mat,
+            Point(centerX - crosshairSize, centerY),
+            Point(centerX + crosshairSize, centerY),
+            greenColor,
+            2
+        )
+        
+        // Vertical line
+        Imgproc.line(
+            mat,
+            Point(centerX, centerY - crosshairSize),
+            Point(centerX, centerY + crosshairSize),
+            greenColor,
+            2
+        )
+        
+        Logger.debug("Drew rectangle for card ${card.id} at (${card.left}, ${card.top}) to (${card.right}, ${card.bottom})")
+    }
+    
+    /**
+     * Save processed image to temporary file
+     */
+    fun saveProcessedImageToTemp(bitmap: Bitmap, filename: String = "processed_image.jpg"): Result<String> {
+        return try {
+            val tempDir = File(context.cacheDir, "processed_images")
+            if (!tempDir.exists()) {
+                tempDir.mkdirs()
+            }
+            
+            val imageFile = File(tempDir, filename)
+            val outputStream = FileOutputStream(imageFile)
+            
+            outputStream.use { stream ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
+            }
+            
+            Logger.info("Processed image saved to: ${imageFile.absolutePath}")
+            Result.success(imageFile.absolutePath)
+            
+        } catch (e: IOException) {
+            Logger.error("Failed to save processed image", e)
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * Get temp directory for processed images
+     */
+    fun getTempImageDirectory(): File {
+        val tempDir = File(context.cacheDir, "processed_images")
+        if (!tempDir.exists()) {
+            tempDir.mkdirs()
+        }
+        return tempDir
     }
     
     data class ThresholdParams(
