@@ -369,17 +369,55 @@ class ImageRepository @Inject constructor(
     override suspend fun isValidImageFile(uri: Uri): Boolean = withContext(Dispatchers.IO) {
         try {
             val mimeType = context.contentResolver.getType(uri)
+            Logger.debug("Image validation - URI: $uri, MIME type: $mimeType")
+            
+            // Primary validation: check MIME type
             val isImageType = mimeType?.startsWith("image/") == true
+            if (!isImageType) {
+                Logger.debug("Image validation failed: MIME type is not image/*")
+                return@withContext false
+            }
             
-            if (!isImageType) return@withContext false
+            // Secondary validation: check if it's a supported image format
+            val supportedMimeTypes = listOf(
+                "image/jpeg", 
+                "image/jpg", 
+                "image/png"
+            )
             
-            // Check file extension
-            val path = uri.path ?: return@withContext false
-            val extension = path.substringAfterLast('.', "").lowercase()
+            if (mimeType in supportedMimeTypes) {
+                Logger.debug("Image validation passed: MIME type $mimeType is supported")
+                return@withContext true
+            }
             
-            Constants.SUPPORTED_EXTENSIONS.contains(extension)
+            // Fallback: try to extract extension for content URIs
+            val displayName = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIndex >= 0 && cursor.moveToFirst()) {
+                    cursor.getString(nameIndex)
+                } else null
+            }
+            
+            if (displayName != null) {
+                val extension = displayName.substringAfterLast('.', "").lowercase()
+                val isValidExtension = Constants.SUPPORTED_EXTENSIONS.contains(extension)
+                Logger.debug("Image validation - Display name: $displayName, Extension: $extension, Valid: $isValidExtension")
+                return@withContext isValidExtension
+            }
+            
+            // Final fallback: try uri.path
+            val path = uri.path
+            if (path != null) {
+                val extension = path.substringAfterLast('.', "").lowercase()
+                val isValidExtension = Constants.SUPPORTED_EXTENSIONS.contains(extension)
+                Logger.debug("Image validation - Path: $path, Extension: $extension, Valid: $isValidExtension")
+                return@withContext isValidExtension
+            }
+            
+            Logger.debug("Image validation failed: Could not determine file type")
+            false
         } catch (e: Exception) {
-            Logger.debug("Failed to validate image file: ${e.message}")
+            Logger.error("Failed to validate image file: ${e.message}", e)
             false
         }
     }
