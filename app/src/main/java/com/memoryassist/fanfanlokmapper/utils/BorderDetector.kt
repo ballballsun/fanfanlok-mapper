@@ -4,8 +4,11 @@ import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import com.memoryassist.fanfanlokmapper.data.models.CardPosition
 import kotlin.math.abs
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class BorderDetector {
+@Singleton
+class BorderDetector @Inject constructor() {
     
     /**
      * Detect card borders using Canny edge detection and contour analysis

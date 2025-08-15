@@ -11,8 +11,12 @@ import org.opencv.imgproc.Imgproc
 import org.opencv.core.CvType
 import org.opencv.core.Scalar
 import java.io.InputStream
+import javax.inject.Inject
+import javax.inject.Singleton
+import dagger.hilt.android.qualifiers.ApplicationContext
 
-class ImageProcessor(private val context: Context) {
+@Singleton
+class ImageProcessor @Inject constructor(@ApplicationContext private val context: Context) {
     
     /**
      * Load image from URI and convert to Bitmap

@@ -16,13 +16,12 @@
       <change beforePath="$PROJECT_DIR$/.gradle/8.11.1/fileHashes/fileHashes.lock" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/8.11.1/fileHashes/fileHashes.lock" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.gradle/8.11.1/fileHashes/resourceHashesCache.bin" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/8.11.1/fileHashes/resourceHashesCache.bin" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.gradle/buildOutputCleanup/buildOutputCleanup.lock" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/buildOutputCleanup/buildOutputCleanup.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/data/repository/ImageRepository.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/data/repository/ImageRepository.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/domain/usecase/ProcessImageUseCase.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/domain/usecase/ProcessImageUseCase.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/ui/components/ImagePicker.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/ui/components/ImagePicker.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/ui/screens/ImageProcessingScreen.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/ui/screens/ImageProcessingScreen.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/ui/screens/MainScreen.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/ui/screens/MainScreen.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/viewmodel/ImageProcessingViewModel.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/viewmodel/ImageProcessingViewModel.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/viewmodel/MainViewModel.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/viewmodel/MainViewModel.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gradle/buildOutputCleanup/outputFiles.bin" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/buildOutputCleanup/outputFiles.bin" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/domain/usecase/FilterResultsUseCase.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/domain/usecase/FilterResultsUseCase.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/utils/BorderDetector.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/utils/BorderDetector.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/utils/GridMapper.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/utils/GridMapper.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/utils/ImageProcessor.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/memoryassist/fanfanlokmapper/utils/ImageProcessor.kt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -71,7 +70,7 @@
   }
 }</component>
   <component name="ProblemsViewState">
-    <option name="selectedTabId" value="ProjectErrors" />
+    <option name="selectedTabId" value="CurrentFile" />
   </component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 8

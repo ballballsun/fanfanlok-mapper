@@ -4,8 +4,11 @@ import com.memoryassist.fanfanlokmapper.data.models.CardPosition
 import com.memoryassist.fanfanlokmapper.utils.Logger
 import com.memoryassist.fanfanlokmapper.utils.ImageProcessor
 import kotlin.math.abs
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class FilterResultsUseCase {
+@Singleton
+class FilterResultsUseCase @Inject constructor() {
     
     /**
      * Filter detection results based on size thresholds and quality criteria

@@ -2,8 +2,11 @@ package com.memoryassist.fanfanlokmapper.utils
 
 import com.memoryassist.fanfanlokmapper.data.models.CardPosition
 import kotlin.math.*
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class GridMapper {
+@Singleton
+class GridMapper @Inject constructor() {
     
     /**
      * Map detected cards to a 4x6 grid structure using clustering
