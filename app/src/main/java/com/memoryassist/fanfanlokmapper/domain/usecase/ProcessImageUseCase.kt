@@ -30,7 +30,8 @@ class ProcessImageUseCase @Inject constructor(
      */
     suspend fun processImage(
         imageUri: Uri,
-        config: DetectionConfig? = null
+        config: DetectionConfig? = null,
+        bypassCache: Boolean = false
     ): ProcessingResult = withContext(Dispatchers.IO) {
         val sessionId = UUID.randomUUID().toString()
         val startTime = System.currentTimeMillis()
@@ -47,17 +48,21 @@ class ProcessImageUseCase @Inject constructor(
                 )
             }
             
-            // Step 2: Check cache first
+            // Step 2: Check cache first (unless bypassed)
             val cacheKey = generateCacheKey(imageUri)
-            val cachedResult = repository.getCachedResult(cacheKey)
-            if (cachedResult != null) {
-                Logger.info("Returning cached result for URI: $imageUri")
-                return@withContext ProcessingResult.Success(
-                    uri = imageUri,
-                    detectionResult = cachedResult,
-                    fromCache = true,
-                    metadata = null
-                )
+            if (!bypassCache) {
+                val cachedResult = repository.getCachedResult(cacheKey)
+                if (cachedResult != null) {
+                    Logger.info("Returning cached result for URI: $imageUri")
+                    return@withContext ProcessingResult.Success(
+                        uri = imageUri,
+                        detectionResult = cachedResult,
+                        fromCache = true,
+                        metadata = null
+                    )
+                }
+            } else {
+                Logger.info("🔄 Cache bypassed - forcing fresh detection for URI: $imageUri")
             }
             
             // Step 3: Load and process image
@@ -116,8 +121,8 @@ class ProcessImageUseCase @Inject constructor(
         val cacheKey = generateCacheKey(imageUri)
         repository.cacheResult(cacheKey, null!!) // Clear specific cache entry
         
-        // Process with new configuration
-        processImage(imageUri, newConfig)
+        // Process with new configuration (bypass cache)
+        processImage(imageUri, newConfig, bypassCache = true)
     }
     
     /**
@@ -128,8 +133,8 @@ class ProcessImageUseCase @Inject constructor(
         outputPath: String,
         config: DetectionConfig? = null
     ): OverlayResult = withContext(Dispatchers.IO) {
-        // Process the image
-        val processingResult = processImage(imageUri, config)
+        // Process the image (bypass cache)
+        val processingResult = processImage(imageUri, config, bypassCache = true)
         
         when (processingResult) {
             is ProcessingResult.Success -> {
@@ -187,7 +192,7 @@ class ProcessImageUseCase @Inject constructor(
                 completedResults = results.toList()
             ))
             
-            val result = processImage(uri, config)
+            val result = processImage(uri, config, bypassCache = true)
             results.add(result)
             
             emit(BatchProcessingUpdate.ItemCompleted(

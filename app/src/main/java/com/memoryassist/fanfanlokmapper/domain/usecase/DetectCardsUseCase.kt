@@ -40,26 +40,33 @@ class DetectCardsUseCase @Inject constructor(
             
             // Step 1: Convert bitmap to OpenCV Mat
             val originalMat = imageProcessor.bitmapToMat(bitmap)
+            Logger.logImageInfo(originalMat.cols(), originalMat.rows(), originalMat.channels())
             
             // Step 2: Resize if needed for performance
             val workingMat = if (config.maxImageWidth > 0 && config.maxImageHeight > 0) {
-                imageProcessor.resizeIfNeeded(
+                val resized = imageProcessor.resizeIfNeeded(
                     originalMat,
                     config.maxImageWidth,
                     config.maxImageHeight
                 )
+                if (resized !== originalMat) {
+                    Logger.logPreprocessing("Resize", "${originalMat.cols()}x${originalMat.rows()}", "${resized.cols()}x${resized.rows()}")
+                }
+                resized
             } else {
                 originalMat
             }
             
             // Step 3: Calculate adaptive thresholds
             val thresholds = if (config.useAdaptiveSizeFilter) {
-                imageProcessor.calculateAdaptiveThresholds(
+                val adaptive = imageProcessor.calculateAdaptiveThresholds(
                     workingMat.cols(),
                     workingMat.rows()
                 )
+                Logger.logThresholds(adaptive)
+                adaptive
             } else {
-                ImageProcessor.ThresholdParams(
+                val fixed = ImageProcessor.ThresholdParams(
                     minArea = config.minCardArea,
                     maxArea = config.maxCardArea,
                     minWidth = com.memoryassist.fanfanlokmapper.utils.Constants.MIN_CARD_WIDTH,
@@ -67,6 +74,8 @@ class DetectCardsUseCase @Inject constructor(
                     aspectRatioMin = com.memoryassist.fanfanlokmapper.utils.Constants.ASPECT_RATIO_MIN,
                     aspectRatioMax = com.memoryassist.fanfanlokmapper.utils.Constants.ASPECT_RATIO_MAX
                 )
+                Logger.logThresholds(fixed)
+                fixed
             }
             
             // Step 4: Detect cards using selected method

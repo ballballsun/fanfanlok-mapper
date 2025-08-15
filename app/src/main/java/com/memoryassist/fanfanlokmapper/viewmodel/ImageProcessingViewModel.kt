@@ -85,10 +85,11 @@ class ImageProcessingViewModel @Inject constructor(
                 _processingState.value = ProcessingState.Detecting
                 _uiState.update { it.copy(processingStage = "Detecting cards...") }
                 
-                // Process the image
+                // Process the image (bypass cache for debugging)
                 val result = processImageUseCase.processImage(
                     imageUri = uri,
-                    config = _detectionConfig.value
+                    config = _detectionConfig.value,
+                    bypassCache = true // Always bypass cache for fresh detection
                 )
                 
                 _processingProgress.value = 0.8f
@@ -404,6 +405,20 @@ class ImageProcessingViewModel @Inject constructor(
         Logger.error("Processing exception", e)
         _processingState.value = ProcessingState.Failed(e.message ?: "Unknown error")
         _errorMessage.emit("Processing failed: ${e.message}")
+    }
+    
+    /**
+     * Clear all cached results to force fresh detection
+     */
+    fun clearCache() {
+        viewModelScope.launch {
+            try {
+                processImageUseCase.clearAllData()
+                Logger.success("🗑️ Cache cleared - next detection will be fresh")
+            } catch (e: Exception) {
+                Logger.error("Failed to clear cache", e)
+            }
+        }
     }
     
 }

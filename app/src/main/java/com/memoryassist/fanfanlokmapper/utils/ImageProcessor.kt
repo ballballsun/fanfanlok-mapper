@@ -66,12 +66,16 @@ class ImageProcessor @Inject constructor(@ApplicationContext private val context
     fun preprocessForEdgeDetection(mat: Mat): Mat {
         val processed = Mat()
         
+        Logger.info("🔧 Starting image preprocessing - Input: ${mat.cols()}x${mat.rows()}, channels=${mat.channels()}")
+        
         // Convert to grayscale if needed
         val gray = if (mat.channels() > 1) {
             val grayMat = Mat()
             Imgproc.cvtColor(mat, grayMat, Imgproc.COLOR_BGR2GRAY)
+            Logger.logPreprocessing("Convert to grayscale", "${mat.cols()}x${mat.rows()}, channels=${mat.channels()}")
             grayMat
         } else {
+            Logger.logPreprocessing("Already grayscale", "${mat.cols()}x${mat.rows()}")
             mat.clone()
         }
         
@@ -83,7 +87,8 @@ class ImageProcessor @Inject constructor(@ApplicationContext private val context
             0.0
         )
         
-        Logger.debug("Preprocessing completed: Grayscale + Gaussian blur applied")
+        Logger.logPreprocessing("Gaussian blur", "kernel=${Constants.GAUSSIAN_BLUR_SIZE}x${Constants.GAUSSIAN_BLUR_SIZE}")
+        Logger.info("✅ Preprocessing complete - Output: ${processed.cols()}x${processed.rows()}")
         return processed
     }
     
@@ -137,29 +142,33 @@ class ImageProcessor @Inject constructor(@ApplicationContext private val context
     fun calculateAdaptiveThresholds(imageWidth: Int, imageHeight: Int): ThresholdParams {
         val totalArea = imageWidth * imageHeight
         
-        // Each card should be roughly 1/24 to 1/30 of total area (accounting for spacing)
-        val expectedCardArea = totalArea / 30.0
+        // For memory card games, each card typically takes up 1/30 to 1/120 of total area
+        // Start with more conservative estimate and allow wide range
+        val expectedCardArea = totalArea / 80.0  // Much smaller expectation
         
-        // Allow 50% variation in size
-        val minArea = (expectedCardArea * 0.5).toInt()
-        val maxArea = (expectedCardArea * 1.5).toInt()
+        // Use reasonable bounds based on typical card sizes
+        val minArea = maxOf(1000, (expectedCardArea * 0.3).toInt())  // Use constant minimum or calculated
+        val maxArea = minOf(50000, (expectedCardArea * 4.0).toInt()) // Use constant maximum or calculated
         
         // Calculate expected dimensions (assuming roughly 0.7 aspect ratio for cards)
         val expectedHeight = kotlin.math.sqrt(expectedCardArea / 0.7)
         val expectedWidth = expectedHeight * 0.7
         
-        val minWidth = (expectedWidth * 0.5).toInt()
-        val minHeight = (expectedHeight * 0.5).toInt()
+        // Use reasonable minimum dimensions
+        val minWidth = maxOf(30, (expectedWidth * 0.3).toInt())
+        val minHeight = maxOf(40, (expectedHeight * 0.3).toInt())
         
-        Logger.info("Adaptive thresholds calculated - MinArea: $minArea, MaxArea: $maxArea")
+        Logger.info("Adaptive thresholds calculated - Image: ${imageWidth}x${imageHeight}, TotalArea: $totalArea")
+        Logger.info("Expected card area: $expectedCardArea, MinArea: $minArea, MaxArea: $maxArea")
+        Logger.info("Expected dimensions: ${expectedWidth}x${expectedHeight}, MinDim: ${minWidth}x${minHeight}")
         
         return ThresholdParams(
             minArea = minArea,
             maxArea = maxArea,
             minWidth = minWidth,
             minHeight = minHeight,
-            aspectRatioMin = Constants.ASPECT_RATIO_MIN,
-            aspectRatioMax = Constants.ASPECT_RATIO_MAX
+            aspectRatioMin = 0.3, // Even more lenient aspect ratio
+            aspectRatioMax = 3.0   // Even more lenient aspect ratio
         )
     }
     

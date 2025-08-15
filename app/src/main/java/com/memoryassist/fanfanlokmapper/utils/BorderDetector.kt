@@ -38,6 +38,40 @@ class BorderDetector @Inject constructor() {
         // Step 5: Remove overlapping detections
         val finalPositions = removeOverlappingCards(cardPositions)
         
+        // Step 6: If we found very few cards, try alternative approaches
+        if (finalPositions.size < 5) {
+            Logger.warning("Primary detection found only ${finalPositions.size} cards, trying fallback methods")
+            
+            // Try with more relaxed thresholds
+            val relaxedThresholds = thresholds.copy(
+                minArea = (thresholds.minArea * 0.5).toInt(),
+                maxArea = (thresholds.maxArea * 2.0).toInt(),
+                minWidth = (thresholds.minWidth * 0.5).toInt(),
+                minHeight = (thresholds.minHeight * 0.5).toInt(),
+                aspectRatioMin = 0.3,
+                aspectRatioMax = 3.0
+            )
+            
+            Logger.info("🔄 Trying fallback with relaxed thresholds")
+            Logger.logThresholds(relaxedThresholds)
+            
+            val fallbackRectangles = filterRectangularContours(contours, relaxedThresholds)
+            
+            if (fallbackRectangles.size > finalPositions.size) {
+                val fallbackPositions = rectanglesToCardPositions(fallbackRectangles)
+                val fallbackFinal = removeOverlappingCards(fallbackPositions)
+                
+                if (fallbackFinal.size > finalPositions.size) {
+                    Logger.logFallbackDetection(finalPositions.size, fallbackFinal.size, "fallback")
+                    val processingTime = System.currentTimeMillis() - startTime
+                    Logger.logDetectionResult(fallbackFinal.size, processingTime)
+                    return fallbackFinal
+                }
+            } else {
+                Logger.warning("Fallback detection didn't improve results: ${fallbackRectangles.size} rectangles")
+            }
+        }
+        
         val processingTime = System.currentTimeMillis() - startTime
         Logger.logDetectionResult(finalPositions.size, processingTime)
         
@@ -76,7 +110,7 @@ class BorderDetector @Inject constructor() {
         val lower = maxOf(0.0, (1.0 - sigma) * v)
         val upper = minOf(255.0, (1.0 + sigma) * v)
         
-        Logger.debug("Canny thresholds: lower=$lower, upper=$upper")
+        Logger.logCannyParams(lower, upper, "mean=${String.format("%.1f", v)}")
         return Pair(lower, upper)
     }
     
@@ -106,31 +140,68 @@ class BorderDetector @Inject constructor() {
         thresholds: ImageProcessor.ThresholdParams
     ): List<RotatedRect> {
         val rectangles = mutableListOf<RotatedRect>()
+        var areaFiltered = 0
+        var shapeFiltered = 0
+        var rectangleFiltered = 0
         
-        for (contour in contours) {
+        Logger.info("Filtering ${contours.size} contours with thresholds")
+        Logger.logThresholds(thresholds)
+        
+        for ((index, contour) in contours.withIndex()) {
             // Calculate contour area
             val area = Imgproc.contourArea(contour)
             
+            // Log first 20 contours for detailed debugging
+            if (index < 20) {
+                Logger.debug("Contour $index: area=$area (range: ${thresholds.minArea}-${thresholds.maxArea})")
+            }
+            
             // Skip if area is outside thresholds
             if (area < thresholds.minArea || area > thresholds.maxArea) {
+                areaFiltered++
+                if (index < 20) { // Log first 20 for debugging
+                    Logger.logContourDetails(index, area, 0, "n/a", "AREA_FILTERED")
+                }
                 continue
             }
             
             // Approximate contour to polygon
             val approx = approximateContour(contour)
+            val vertices = approx.rows()
+            
+            if (index < 20) {
+                Logger.debug("Contour $index: area=$area, vertices=$vertices")
+            }
             
             // Check if it's roughly rectangular (4-6 vertices allowing for imperfect detection)
-            if (approx.rows() in 4..6) {
+            if (vertices in 4..6) {
                 // Fit a rotated rectangle
                 val rect = Imgproc.minAreaRect(MatOfPoint2f(*contour.toArray()))
+                val sizeStr = "${String.format("%.1f", rect.size.width)}x${String.format("%.1f", rect.size.height)}"
+                
+                if (index < 20) {
+                    Logger.debug("Contour $index: rect size=$sizeStr, angle=${rect.angle}")
+                }
                 
                 // Check dimensions and aspect ratio
                 if (isValidCardRectangle(rect, thresholds)) {
                     rectangles.add(rect)
+                    Logger.logContourDetails(index, area, vertices, sizeStr, "ACCEPTED")
+                } else {
+                    rectangleFiltered++
+                    if (index < 20) { // Log first 20 rejected for debugging
+                        Logger.logContourDetails(index, area, vertices, sizeStr, "RECT_REJECTED")
+                    }
+                }
+            } else {
+                shapeFiltered++
+                if (index < 20) {
+                    Logger.logContourDetails(index, area, vertices, "n/a", "SHAPE_FILTERED")
                 }
             }
         }
         
+        Logger.logContourFiltering(contours.size, areaFiltered, shapeFiltered, rectangleFiltered, rectangles.size)
         return rectangles
     }
     
@@ -160,21 +231,25 @@ class BorderDetector @Inject constructor() {
         
         // Check minimum dimensions
         if (width < thresholds.minWidth || height < thresholds.minHeight) {
+            Logger.debug("Rectangle rejected: dimensions ${String.format("%.1f", width)}x${String.format("%.1f", height)} below min ${thresholds.minWidth}x${thresholds.minHeight}")
             return false
         }
         
-        // Check aspect ratio
+        // Check aspect ratio (be more lenient)
         val aspectRatio = width / height
         if (aspectRatio < thresholds.aspectRatioMin || aspectRatio > thresholds.aspectRatioMax) {
+            Logger.debug("Rectangle rejected: aspect ratio ${String.format("%.3f", aspectRatio)} outside ${thresholds.aspectRatioMin}-${thresholds.aspectRatioMax}")
             return false
         }
         
-        // Check for reasonable angle (cards should be mostly upright)
+        // Check for reasonable angle (be more lenient - allow up to 30 degrees rotation)
         val angle = abs(rect.angle)
-        if (angle > 15 && angle < 75) {
+        if (angle > 30 && angle < 60) {
+            Logger.debug("Rectangle rejected: angle ${String.format("%.1f", angle)} too steep")
             return false
         }
         
+        Logger.debug("Rectangle accepted: ${String.format("%.1f", width)}x${String.format("%.1f", height)}, aspect=${String.format("%.3f", aspectRatio)}, angle=${String.format("%.1f", angle)}")
         return true
     }
     

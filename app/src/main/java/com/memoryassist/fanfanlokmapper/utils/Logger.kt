@@ -66,7 +66,7 @@ object Logger {
     }
     
     fun logDetectionProgress(step: String, details: String = "") {
-        debug("📊 Detection step: $step${if (details.isNotEmpty()) " - $details" else ""}")
+        info("📊 Detection step: $step${if (details.isNotEmpty()) " - $details" else ""}")
     }
     
     fun logDetectionResult(cardsFound: Int, processingTimeMs: Long) {
@@ -80,6 +80,36 @@ object Logger {
     
     fun logDetectionError(error: String, details: String = "") {
         error("❌ Detection failed: $error${if (details.isNotEmpty()) " - $details" else ""}")
+    }
+    
+    // Enhanced detection pipeline logging
+    fun logImageInfo(width: Int, height: Int, channels: Int) {
+        info("📸 Image info: ${width}x${height}, channels: $channels, area: ${width * height}")
+    }
+    
+    fun logPreprocessing(step: String, fromSize: String, toSize: String = "") {
+        val message = "🔧 Preprocessing: $step${if (toSize.isNotEmpty()) " $fromSize -> $toSize" else " on $fromSize"}"
+        info(message)
+    }
+    
+    fun logThresholds(thresholds: com.memoryassist.fanfanlokmapper.utils.ImageProcessor.ThresholdParams) {
+        info("⚙️ Thresholds: Area[${thresholds.minArea}-${thresholds.maxArea}], Size[${thresholds.minWidth}x${thresholds.minHeight}], Aspect[${thresholds.aspectRatioMin}-${thresholds.aspectRatioMax}]")
+    }
+    
+    fun logCannyParams(lower: Double, upper: Double, imageStats: String) {
+        info("🔍 Canny params: lower=$lower, upper=$upper, image=$imageStats")
+    }
+    
+    fun logContourFiltering(total: Int, areaFiltered: Int, shapeFiltered: Int, rectangleFiltered: Int, accepted: Int) {
+        info("🎯 Contour filtering: $total total -> $areaFiltered area-filtered, $shapeFiltered shape-filtered, $rectangleFiltered rectangle-filtered -> $accepted accepted")
+    }
+    
+    fun logContourDetails(index: Int, area: Double, vertices: Int, size: String, result: String) {
+        debug("📐 Contour $index: area=$area, vertices=$vertices, size=$size -> $result")
+    }
+    
+    fun logFallbackDetection(primaryCards: Int, fallbackCards: Int, using: String) {
+        warning("🔄 Fallback detection: primary found $primaryCards, fallback found $fallbackCards, using $using")
     }
     
     fun logGridAnalysis(expectedCards: Int, detectedCards: Int, gridValid: Boolean) {

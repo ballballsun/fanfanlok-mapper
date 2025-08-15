@@ -52,13 +52,42 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Initialize OpenCV
-        // TODO: Add OpenCV initialization when module is added
-        // if (!OpenCVLoader.initDebug()) {
-        //     Logger.error("Unable to load OpenCV!")
-        // } else {
-        //     Logger.info("OpenCV loaded successfully")
-        // }
+        // Startup logging
+        Logger.info("🚀 FanFanLokMapper started")
+        
+        // Initialize OpenCV - try multiple methods
+        try {
+            var opencvLoaded = false
+            
+            // Method 1: Try initLocal (static loading)
+            try {
+                if (org.opencv.android.OpenCVLoader.initLocal()) {
+                    Logger.success("✅ OpenCV loaded successfully (static/local)")
+                    opencvLoaded = true
+                }
+            } catch (e: Exception) {
+                Logger.warning("⚠️ Static OpenCV loading failed: ${e.message}")
+            }
+            
+            if (!opencvLoaded) {
+                // Method 2: Try initDebug (for debugging)
+                try {
+                    if (org.opencv.android.OpenCVLoader.initDebug()) {
+                        Logger.success("✅ OpenCV loaded successfully (debug)")
+                        opencvLoaded = true
+                    }
+                } catch (e: Exception) {
+                    Logger.warning("⚠️ Debug OpenCV loading failed: ${e.message}")
+                }
+            }
+            
+            if (!opencvLoaded) {
+                Logger.error("❌ All OpenCV loading methods failed")
+                Logger.error("💡 Try installing 'OpenCV Manager' from Google Play Store")
+            }
+        } catch (e: Exception) {
+            Logger.error("❌ OpenCV initialization exception", e)
+        }
         
         enableEdgeToEdge()
         
